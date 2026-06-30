@@ -48,6 +48,13 @@ type Verdict struct {
 	Reasoning   string     // human-readable explanation
 }
 
+// Result pairs a Listing with the Verdict produced by verifying it. It is the
+// unit the output stage renders.
+type Result struct {
+	Listing Listing
+	Verdict Verdict
+}
+
 // Source is anything that produces Listings for a query. Ingest adapters (e.g.
 // Apify) implement it to pull candidate jobs; ATS adapters (Greenhouse, Lever)
 // implement it to return a company's open requisitions for cross-referencing.
