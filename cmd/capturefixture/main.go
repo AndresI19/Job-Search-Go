@@ -22,9 +22,10 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/apify"
 )
 
-// Actor 1 — curious_coder/linkedin-jobs-scraper: public search URLs,
-// pay-per-result, no account cookies. See issue #11.
-const linkedInJobsActor = "hKByXkMQaC5Qt9UMN"
+// defaultLinkedInActor is curious_coder/linkedin-jobs-scraper: public search
+// URLs, pay-per-result, no account cookies (see issue #11). It is used when
+// APIFY_ACTOR_ID is unset. The Actor id is public, not a secret.
+const defaultLinkedInActor = "hKByXkMQaC5Qt9UMN"
 
 func main() {
 	url := flag.String("url", "", "LinkedIn jobs search URL to scrape (required)")
@@ -41,6 +42,10 @@ func main() {
 		fmt.Fprintln(os.Stderr, "error: APIFY_TOKEN is not set (copy .env.template to .env)")
 		os.Exit(2)
 	}
+	actorID := os.Getenv("APIFY_ACTOR_ID")
+	if actorID == "" {
+		actorID = defaultLinkedInActor
+	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
 	defer cancel()
@@ -52,8 +57,8 @@ func main() {
 		"scrapeCompany": true,
 	}
 
-	fmt.Fprintf(os.Stderr, "running actor %s (count=%d)…\n", linkedInJobsActor, *count)
-	items, err := client.Run(ctx, linkedInJobsActor, input)
+	fmt.Fprintf(os.Stderr, "running actor %s (count=%d)…\n", actorID, *count)
+	items, err := client.Run(ctx, actorID, input)
 	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
