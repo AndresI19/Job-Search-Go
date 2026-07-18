@@ -13,15 +13,41 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 )
 
 const defaultBaseURL = "https://api.apify.com/v2"
 
-// ErrRateLimited is returned (wrapped) when Apify responds 429 Too Many Requests.
-// Callers can errors.Is on it to stop ingesting gracefully and keep the data
-// collected so far, rather than failing the run.
-var ErrRateLimited = errors.New("apify: rate limited")
+// ErrRateLimited is returned (wrapped) when Apify throttles requests (HTTP 429).
+// ErrUsageLimit is returned (wrapped) when Apify blocks a request because the
+// account's usage/budget limit is reached (e.g. the free plan's monthly cap).
+// Both mean "we can't keep ingesting"; callers errors.Is on them to stop
+// gracefully and keep the data collected so far rather than failing the run.
+var (
+	ErrRateLimited = errors.New("apify: rate limited")
+	ErrUsageLimit  = errors.New("apify: usage limit reached")
+)
+
+// classifyLimit inspects a non-2xx Apify response and returns the matching limit
+// sentinel, or nil for an ordinary error. It keys off the structured error type
+// (stabler than the status code, which differs between rate and usage limits).
+func classifyLimit(status int, body []byte) error {
+	var e struct {
+		Error struct {
+			Type string `json:"type"`
+		} `json:"error"`
+	}
+	_ = json.Unmarshal(body, &e)
+	t := strings.ToLower(e.Error.Type)
+	switch {
+	case status == http.StatusTooManyRequests || strings.Contains(t, "rate-limit"):
+		return ErrRateLimited
+	case strings.Contains(t, "usage"): // e.g. "monthly-usage-hard-limit-exceeded"
+		return ErrUsageLimit
+	}
+	return nil
+}
 
 // Client talks to the Apify REST API using a bearer token.
 type Client struct {
@@ -145,12 +171,11 @@ func (c *Client) do(ctx context.Context, method, url string, body io.Reader, out
 		return err
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode == http.StatusTooManyRequests {
-		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
-		return fmt.Errorf("%w: %s %s: %s", ErrRateLimited, method, url, bytes.TrimSpace(b))
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		if limitErr := classifyLimit(resp.StatusCode, b); limitErr != nil {
+			return fmt.Errorf("%w: %s %s: %s", limitErr, method, url, bytes.TrimSpace(b))
+		}
 		return fmt.Errorf("apify %s %s: %d: %s", method, url, resp.StatusCode, bytes.TrimSpace(b))
 	}
 	if out == nil {

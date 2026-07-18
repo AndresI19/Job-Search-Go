@@ -91,7 +91,8 @@ func run() error {
 	seen := map[string]bool{}
 	var listings []model.Listing
 	var failed int
-	rateLimited := false
+	limited := false
+	limitReason := ""
 	for _, q := range wl.Queries {
 		logger.Info("ingesting query", "field", q.Field)
 		raw, err := client.Run(ctx, actorID, map[string]any{
@@ -100,11 +101,17 @@ func run() error {
 			"scrapeCompany": true,
 		})
 		if err != nil {
-			// On an Apify rate limit, stop ingesting and proceed with whatever we
-			// collected so far — retrying would just keep hitting the limit.
-			if errors.Is(err, apify.ErrRateLimited) {
-				logger.Warn("apify rate limit hit; stopping ingest, keeping data collected so far", "field", q.Field)
-				rateLimited = true
+			// On an Apify rate or usage/budget limit, stop ingesting and proceed
+			// with whatever we collected — retrying would just keep hitting it.
+			switch {
+			case errors.Is(err, apify.ErrRateLimited):
+				limitReason = "rate limit"
+			case errors.Is(err, apify.ErrUsageLimit):
+				limitReason = "usage/budget limit"
+			}
+			if limitReason != "" {
+				logger.Warn("apify limit hit; stopping ingest, keeping data collected so far", "limit", limitReason, "field", q.Field)
+				limited = true
 				break
 			}
 			logger.Error("ingest failed; skipping query", "field", q.Field, "err", err)
@@ -121,7 +128,7 @@ func run() error {
 		}
 		logger.Info("ingested query", "field", q.Field, "kept", len(listings)-before)
 	}
-	if !rateLimited && len(wl.Queries) > 0 && failed == len(wl.Queries) {
+	if !limited && len(wl.Queries) > 0 && failed == len(wl.Queries) {
 		return fmt.Errorf("all %d queries failed to ingest", failed)
 	}
 
@@ -142,11 +149,11 @@ func run() error {
 	if err := output.WriteCSV(w, results); err != nil {
 		return err
 	}
-	if rateLimited {
+	if limited {
 		fmt.Fprintf(os.Stderr,
-			"\n⚠ DISCLAIMER: Apify rate-limited during ingest. These results are a PARTIAL collection "+
+			"\n⚠ DISCLAIMER: Apify %s reached during ingest. These results are a PARTIAL collection "+
 				"(%d listings from the queries that completed before the limit), not the full watch-list.\n",
-			len(listings))
+			limitReason, len(listings))
 	}
 	return nil
 }
