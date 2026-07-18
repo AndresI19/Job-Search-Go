@@ -3,6 +3,7 @@ package apify
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -67,5 +68,20 @@ func TestRun(t *testing.T) {
 	}
 	if !strings.Contains(string(items[0]), "Backend Engineer") {
 		t.Errorf("item[0] = %s", items[0])
+	}
+}
+
+// TestRateLimited checks a 429 surfaces as the ErrRateLimited sentinel so the
+// caller can stop gracefully, and that it propagates through the Run flow.
+func TestRateLimited(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusTooManyRequests)
+		_, _ = w.Write([]byte(`{"error":{"type":"rate-limit-exceeded"}}`))
+	}))
+	defer srv.Close()
+
+	c := New("tkn", WithBaseURL(srv.URL))
+	if _, err := c.Run(context.Background(), "test-actor", map[string]any{}); !errors.Is(err, ErrRateLimited) {
+		t.Fatalf("Run error = %v, want wrapped ErrRateLimited", err)
 	}
 }
