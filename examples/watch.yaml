@@ -1,17 +1,19 @@
 # Example watch-list for `jobsearch --watch examples/watch.yaml`.
 # Values in `defaults` apply to every query unless the query overrides them.
+#
+# location must be a real LinkedIn geo (e.g. "United States", "San Francisco Bay
+# Area") — NOT "remote". Remote is a separate facet: set `remote: true`. Salary
+# and seniority narrow the search via LinkedIn's own facets; keep them modest, as
+# stacking narrow facets can filter a search down to nothing.
 defaults:
-  location: remote-us
+  location: "United States"
   sources: [greenhouse, lever] # ATS boards to verify listings against
-  max_age_days: 21             # drop stale reposts (also a LinkedIn search facet)
+  max_age_days: 30             # drop stale reposts (also a LinkedIn recency facet)
 
 queries:
-  - field: "backend engineer"  # job field / search keywords (required)
-    salary_min: 150000         # minimum annual salary, USD
-    salary_max: 220000
-    seniority: [mid, senior]
+  - field: "backend engineer" # job field / search keywords (required)
+    remote: true
 
   - field: "platform engineer"
-    salary_min: 160000
-    location: remote-global
+    salary_min: 150000 # minimum annual salary, USD (LinkedIn salary facet)
     remote: true
