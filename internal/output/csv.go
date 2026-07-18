@@ -13,7 +13,7 @@ import (
 // csvHeader is the column order written by WriteCSV. Keep rowFor in sync.
 var csvHeader = []string{
 	"title", "company", "location", "remote", "posted",
-	"applicants", "apply_type", "url", "source",
+	"applicants", "salary_min", "salary_max", "apply_type", "url", "source",
 	"confidence", "score", "verified_via", "coverage", "reasoning",
 }
 
@@ -56,6 +56,8 @@ func rowFor(r model.Result) []string {
 		strconv.FormatBool(l.Remote),
 		posted,
 		applicants,
+		usdOrEmpty(l.SalaryMin),
+		usdOrEmpty(l.SalaryMax),
 		l.ApplyType,
 		l.URL,
 		l.Source,
@@ -65,4 +67,13 @@ func rowFor(r model.Result) []string {
 		strings.Join(v.Coverage, ";"),
 		v.Reasoning,
 	}
+}
+
+// usdOrEmpty renders a salary figure, or "" when unknown (0), so a missing
+// salary is a blank cell rather than a misleading 0.
+func usdOrEmpty(n int) string {
+	if n <= 0 {
+		return ""
+	}
+	return strconv.Itoa(n)
 }

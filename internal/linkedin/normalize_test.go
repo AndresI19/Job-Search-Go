@@ -65,6 +65,24 @@ func TestNormalizeSkipsUnusable(t *testing.T) {
 	}
 }
 
+func TestParseSalary(t *testing.T) {
+	cases := []struct {
+		in     string
+		lo, hi int
+	}{
+		{"$160,000.00/yr - $220,000.00/yr", 160000, 220000},
+		{"$120,000.00/yr - $140,000.00/yr", 120000, 140000},
+		{"$75.00/hr", 156000, 156000}, // 75 * 2080
+		{"", 0, 0},
+		{"Competitive", 0, 0},
+	}
+	for _, c := range cases {
+		if lo, hi := parseSalary(c.in); lo != c.lo || hi != c.hi {
+			t.Errorf("parseSalary(%q) = %d,%d, want %d,%d", c.in, lo, hi, c.lo, c.hi)
+		}
+	}
+}
+
 func TestParseApplicants(t *testing.T) {
 	cases := map[string]int{"25": 25, "Over 200 applicants": 200, "": -1, "n/a": -1}
 	for in, want := range cases {

@@ -30,3 +30,8 @@ go.work.sum
 # Editor/IDE
 # .idea/
 # .vscode/
+bin/
+results.csv
+*.log
+results.xlsx
+results_enriched.csv

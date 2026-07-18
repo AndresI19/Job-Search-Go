@@ -49,6 +49,7 @@ func run() error {
 	count := flag.Int("count", 25, "listings to scrape per query (Actor minimum 10)")
 	sources := flag.String("sources", "", "comma-separated ATS sources to verify against (overrides the watch-list)")
 	minScore := flag.Float64("min-score", 0, "only write listings scoring at least this (0..1)")
+	location := flag.String("location", "", "keep only listings whose location matches this (e.g. remote, Boston)")
 	verbose := flag.Bool("verbose", false, "debug-level logging")
 	flag.Parse()
 
@@ -118,6 +119,7 @@ func run() error {
 	logger.Info("verifying", "listings", len(listings), "workers", *workers)
 	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
 	results = atLeast(results, *minScore)
+	results = matchLocation(results, *location)
 
 	w := os.Stdout
 	if *out != "" {
@@ -167,6 +169,23 @@ func atLeast(results []model.Result, min float64) []model.Result {
 	kept := results[:0]
 	for _, r := range results {
 		if r.Verdict.Score >= min {
+			kept = append(kept, r)
+		}
+	}
+	return kept
+}
+
+// matchLocation keeps results whose location matches the filter (case-insensitive
+// substring). The special value "remote" also matches listings flagged remote,
+// since a remote role's location text is often a company HQ.
+func matchLocation(results []model.Result, filter string) []model.Result {
+	filter = strings.ToLower(strings.TrimSpace(filter))
+	if filter == "" {
+		return results
+	}
+	kept := results[:0]
+	for _, r := range results {
+		if strings.Contains(strings.ToLower(r.Listing.Location), filter) || (filter == "remote" && r.Listing.Remote) {
 			kept = append(kept, r)
 		}
 	}

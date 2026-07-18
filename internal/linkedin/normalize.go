@@ -28,6 +28,7 @@ type record struct {
 	PostedAt        string `json:"postedAt"`
 	ApplicantsCount string `json:"applicantsCount"`
 	ApplyURL        string `json:"applyUrl"`
+	Salary          string `json:"salary"`
 	DescriptionText string `json:"descriptionText"`
 	DescriptionHTML string `json:"descriptionHtml"`
 }
@@ -45,6 +46,7 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 		if r.ApplyURL != "" {
 			applyType = "external"
 		}
+		salMin, salMax := parseSalary(r.Salary)
 		out = append(out, model.Listing{
 			Source:           Source,
 			JobID:            r.ID,
@@ -55,6 +57,8 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			Remote:           strings.Contains(strings.ToLower(r.Location), "remote"),
 			Posted:           parseDate(r.PostedAt),
 			ApplicantCount:   parseApplicants(r.ApplicantsCount),
+			SalaryMin:        salMin,
+			SalaryMax:        salMax,
 			ApplyType:        applyType,
 			ExternalApplyURL: r.ApplyURL,
 			URL:              r.Link,
@@ -82,6 +86,41 @@ func parseApplicants(s string) int {
 		}
 	}
 	return -1
+}
+
+// salaryNum matches a dollar amount and its optional /yr or /hr unit.
+var salaryNum = regexp.MustCompile(`\$\s*([\d,]+(?:\.\d+)?)\s*/?\s*(yr|hr|year|hour)?`)
+
+// parseSalary extracts an annual USD range from LinkedIn's salary string
+// ("$160,000.00/yr - $220,000.00/yr", or "$75.00/hr"). Hourly rates are
+// annualized at 2080 hours. Returns 0,0 when there is no salary to read.
+func parseSalary(s string) (min, max int) {
+	var nums []int
+	for _, m := range salaryNum.FindAllStringSubmatch(s, -1) {
+		v, err := strconv.ParseFloat(strings.ReplaceAll(m[1], ",", ""), 64)
+		if err != nil {
+			continue
+		}
+		if strings.HasPrefix(m[2], "h") {
+			v *= 2080
+		}
+		if v >= 1000 { // ignore stray small numbers that aren't a salary
+			nums = append(nums, int(v+0.5))
+		}
+	}
+	if len(nums) == 0 {
+		return 0, 0
+	}
+	min, max = nums[0], nums[0]
+	for _, n := range nums {
+		if n < min {
+			min = n
+		}
+		if n > max {
+			max = n
+		}
+	}
+	return min, max
 }
 
 // description prefers the Actor's plain-text field, falling back to stripping
