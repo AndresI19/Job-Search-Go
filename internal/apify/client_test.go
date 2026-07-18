@@ -85,3 +85,19 @@ func TestRateLimited(t *testing.T) {
 		t.Fatalf("Run error = %v, want wrapped ErrRateLimited", err)
 	}
 }
+
+// TestUsageLimit checks the account usage/budget cap (a non-429 error typed
+// "…usage…") surfaces as ErrUsageLimit, so the run stops gracefully like a rate
+// limit rather than failing generically.
+func TestUsageLimit(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"error":{"type":"monthly-usage-hard-limit-exceeded","message":"limit reached"}}`))
+	}))
+	defer srv.Close()
+
+	c := New("tkn", WithBaseURL(srv.URL))
+	if _, err := c.Run(context.Background(), "test-actor", map[string]any{}); !errors.Is(err, ErrUsageLimit) {
+		t.Fatalf("Run error = %v, want wrapped ErrUsageLimit", err)
+	}
+}
