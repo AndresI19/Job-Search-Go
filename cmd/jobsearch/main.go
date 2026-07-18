@@ -10,6 +10,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"log/slog"
@@ -90,6 +91,7 @@ func run() error {
 	seen := map[string]bool{}
 	var listings []model.Listing
 	var failed int
+	rateLimited := false
 	for _, q := range wl.Queries {
 		logger.Info("ingesting query", "field", q.Field)
 		raw, err := client.Run(ctx, actorID, map[string]any{
@@ -98,6 +100,13 @@ func run() error {
 			"scrapeCompany": true,
 		})
 		if err != nil {
+			// On an Apify rate limit, stop ingesting and proceed with whatever we
+			// collected so far — retrying would just keep hitting the limit.
+			if errors.Is(err, apify.ErrRateLimited) {
+				logger.Warn("apify rate limit hit; stopping ingest, keeping data collected so far", "field", q.Field)
+				rateLimited = true
+				break
+			}
 			logger.Error("ingest failed; skipping query", "field", q.Field, "err", err)
 			failed++
 			continue
@@ -112,7 +121,7 @@ func run() error {
 		}
 		logger.Info("ingested query", "field", q.Field, "kept", len(listings)-before)
 	}
-	if len(wl.Queries) > 0 && failed == len(wl.Queries) {
+	if !rateLimited && len(wl.Queries) > 0 && failed == len(wl.Queries) {
 		return fmt.Errorf("all %d queries failed to ingest", failed)
 	}
 
@@ -130,7 +139,16 @@ func run() error {
 		defer f.Close()
 		w = f
 	}
-	return output.WriteCSV(w, results)
+	if err := output.WriteCSV(w, results); err != nil {
+		return err
+	}
+	if rateLimited {
+		fmt.Fprintf(os.Stderr,
+			"\n⚠ DISCLAIMER: Apify rate-limited during ingest. These results are a PARTIAL collection "+
+				"(%d listings from the queries that completed before the limit), not the full watch-list.\n",
+			len(listings))
+	}
+	return nil
 }
 
 // buildResolver constructs the ATS resolver. The source set comes from override

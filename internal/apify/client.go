@@ -9,6 +9,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -16,6 +17,11 @@ import (
 )
 
 const defaultBaseURL = "https://api.apify.com/v2"
+
+// ErrRateLimited is returned (wrapped) when Apify responds 429 Too Many Requests.
+// Callers can errors.Is on it to stop ingesting gracefully and keep the data
+// collected so far, rather than failing the run.
+var ErrRateLimited = errors.New("apify: rate limited")
 
 // Client talks to the Apify REST API using a bearer token.
 type Client struct {
@@ -139,6 +145,10 @@ func (c *Client) do(ctx context.Context, method, url string, body io.Reader, out
 		return err
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusTooManyRequests {
+		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("%w: %s %s: %s", ErrRateLimited, method, url, bytes.TrimSpace(b))
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		b, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
 		return fmt.Errorf("apify %s %s: %d: %s", method, url, resp.StatusCode, bytes.TrimSpace(b))
