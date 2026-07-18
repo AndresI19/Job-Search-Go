@@ -15,6 +15,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/AndresI19/Job-Search-Go/internal/apify"
@@ -46,6 +47,8 @@ func run() error {
 	out := flag.String("out", "", "output CSV path (default: stdout)")
 	workers := flag.Int("workers", 8, "max listings verified concurrently")
 	count := flag.Int("count", 25, "listings to scrape per query (Actor minimum 10)")
+	sources := flag.String("sources", "", "comma-separated ATS sources to verify against (overrides the watch-list)")
+	minScore := flag.Float64("min-score", 0, "only write listings scoring at least this (0..1)")
 	verbose := flag.Bool("verbose", false, "debug-level logging")
 	flag.Parse()
 
@@ -77,7 +80,7 @@ func run() error {
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
 	client := apify.New(token)
-	resolver := buildResolver(wl)
+	resolver := buildResolver(wl, splitCSV(*sources))
 	now := time.Now()
 
 	// Ingest each query, normalize, freshness-filter, and dedup across queries
@@ -114,6 +117,7 @@ func run() error {
 
 	logger.Info("verifying", "listings", len(listings), "workers", *workers)
 	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
+	results = atLeast(results, *minScore)
 
 	w := os.Stdout
 	if *out != "" {
@@ -127,15 +131,20 @@ func run() error {
 	return output.WriteCSV(w, results)
 }
 
-// buildResolver constructs the ATS resolver from the sources named across the
-// watch-list (both, when none are named), each wrapped in a single-flight cache
-// so listings that share a company fetch that board once.
-func buildResolver(wl *watchlist.Watchlist) *ats.Resolver {
+// buildResolver constructs the ATS resolver. The source set comes from override
+// (the --sources flag) when non-empty, else from the sources named across the
+// watch-list, else both. Each source is wrapped in a single-flight cache so
+// listings that share a company fetch that board once.
+func buildResolver(wl *watchlist.Watchlist, override []string) *ats.Resolver {
 	want := map[string]bool{}
-	for _, q := range wl.Queries {
-		for _, s := range q.Sources {
-			want[s] = true
+	names := override
+	if len(names) == 0 {
+		for _, q := range wl.Queries {
+			names = append(names, q.Sources...)
 		}
+	}
+	for _, s := range names {
+		want[strings.ToLower(s)] = true
 	}
 	if len(want) == 0 {
 		want["greenhouse"], want["lever"] = true, true
@@ -148,6 +157,31 @@ func buildResolver(wl *watchlist.Watchlist) *ats.Resolver {
 		sources = append(sources, ats.NewCached(lever.New()))
 	}
 	return ats.NewResolver(sources...)
+}
+
+// atLeast keeps only results scoring at or above min (already sorted best-first).
+func atLeast(results []model.Result, min float64) []model.Result {
+	if min <= 0 {
+		return results
+	}
+	kept := results[:0]
+	for _, r := range results {
+		if r.Verdict.Score >= min {
+			kept = append(kept, r)
+		}
+	}
+	return kept
+}
+
+// splitCSV parses a comma-separated flag into trimmed, non-empty values.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 func envOr(key, def string) string {
