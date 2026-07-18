@@ -53,7 +53,9 @@ func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd 
 	// 1 · ATS: resolve the company's board and look for a matching requisition.
 	var atsRes score.ATSResult
 	var candidates []model.Listing
+	atsChecked := false
 	if res, ok := resolver.Resolve(ctx, l.Company); ok {
+		atsChecked = true
 		atsRes = score.ATSResult{Resolved: true, Source: res.Source, Slug: res.Slug}
 		if _, matched := ats.Match(l, res.Listings); matched {
 			atsRes.Matched = true
@@ -64,11 +66,12 @@ func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd 
 		log.Debug("no ats board found", "company", l.Company)
 	}
 
-	// 2 · Claude: judge the listing against the ATS candidates. A judge error is
-	// degraded to no Claude coverage rather than failing the whole listing; the
-	// combiner then scores on the ATS signal alone.
+	// 2 · Claude: judge the listing against the ATS candidates. ATSChecked lets the
+	// prompt distinguish "checked, no match" (ghost signal) from "board not found"
+	// (a coverage gap, not evidence). A judge error is degraded to no Claude
+	// coverage rather than failing the whole listing.
 	var verdict *model.Verdict
-	if v, err := jd.Evaluate(ctx, judge.Input{Listing: l, Candidates: candidates}); err == nil {
+	if v, err := jd.Evaluate(ctx, judge.Input{Listing: l, Candidates: candidates, ATSChecked: atsChecked}); err == nil {
 		verdict = &v
 	} else {
 		log.Warn("judge failed; scoring on ATS signal only", "company", l.Company, "title", l.Title, "err", err)

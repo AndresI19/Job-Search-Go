@@ -23,10 +23,28 @@ func TestBuildPromptIncludesListingAndCandidates(t *testing.T) {
 	}
 }
 
-func TestBuildPromptNoCandidates(t *testing.T) {
-	p := buildPrompt(Input{Listing: model.Listing{Title: "X"}})
-	if !strings.Contains(p, "No matching requisition") {
-		t.Errorf("expected no-candidates note, got:\n%s", p)
+func TestBuildPromptATSStates(t *testing.T) {
+	base := model.Listing{Title: "X", Company: "Acme"}
+
+	// Board not found: neutral wording, and it must NOT claim a missing requisition.
+	notFound := buildPrompt(Input{Listing: base, ATSChecked: false})
+	if !strings.Contains(notFound, "could not be located") {
+		t.Errorf("board-not-found prompt should say the board could not be located:\n%s", notFound)
+	}
+	if strings.Contains(notFound, "NO open requisition") {
+		t.Errorf("board-not-found prompt must not assert a missing requisition:\n%s", notFound)
+	}
+
+	// Checked but empty: a real ghost signal.
+	checkedEmpty := buildPrompt(Input{Listing: base, ATSChecked: true})
+	if !strings.Contains(checkedEmpty, "NO open requisition") {
+		t.Errorf("checked-empty prompt should flag the missing requisition:\n%s", checkedEmpty)
+	}
+
+	// Checked with candidates: list them (candidates imply checked).
+	withCands := buildPrompt(Input{Listing: base, Candidates: []model.Listing{{Title: "Backend Eng", Location: "US"}}})
+	if !strings.Contains(withCands, "Backend Eng") {
+		t.Errorf("with-candidates prompt should list requisitions:\n%s", withCands)
 	}
 }
 
