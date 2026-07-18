@@ -26,6 +26,10 @@ const defaultModel = "claude-haiku-4-5"
 type Input struct {
 	Listing    model.Listing
 	Candidates []model.Listing
+	// ATSChecked is true when the company's ATS board was located and read. When
+	// false, the board could not be found at all (a coverage gap, not evidence),
+	// which the prompt must present very differently from "checked, no match".
+	ATSChecked bool
 }
 
 // Judge evaluates a listing's legitimacy and returns a Verdict. Implementations
@@ -92,16 +96,22 @@ func buildPrompt(in Input) string {
 	b.WriteString("Decide whether a job listing is a legitimate, active posting or a likely ghost job.\n\n")
 	fmt.Fprintf(&b, "LISTING\n  title: %s\n  company: %s\n  location: %s\n  applicants: %d\n  apply_type: %s\n\n",
 		in.Listing.Title, in.Listing.Company, in.Listing.Location, in.Listing.ApplicantCount, in.Listing.ApplyType)
-	if len(in.Candidates) == 0 {
-		b.WriteString("No matching requisition was found on the company's ATS.\n")
-	} else {
-		b.WriteString("CANDIDATE ATS REQUISITIONS\n")
+	// A board we located (or candidates we already have) is real ATS evidence; a
+	// board we could not find is a coverage gap and must NOT read as a ghost.
+	checked := in.ATSChecked || len(in.Candidates) > 0
+	switch {
+	case !checked:
+		b.WriteString("The company's ATS board could not be located (it may use an applicant-tracking system this tool does not check). Treat this as NO information either way — judge only on the listing's own signals (company reputation, role specificity, applicant count, apply type, description quality). Do NOT treat missing ATS data as evidence of a ghost.\n")
+	case len(in.Candidates) == 0:
+		b.WriteString("The company's ATS board was checked and has NO open requisition matching this listing — a strong ghost signal.\n")
+	default:
+		b.WriteString("The company's ATS board was checked. Its open requisitions:\n")
 		for _, c := range in.Candidates {
 			fmt.Fprintf(&b, "  - %s (%s)\n", c.Title, c.Location)
 		}
+		b.WriteString("Set matched=true only if the listing clearly corresponds to one of these requisitions.\n")
 	}
-	b.WriteString("\nSet matched=true only if the listing clearly corresponds to one of the candidate requisitions.\n")
-	b.WriteString("Give verdict as your categorical call (likely-real, uncertain, or likely-ghost), and confidence as how certain you are of that verdict — from 0.0 (unsure) to 1.0 (certain) — NOT how legitimate the job is. Keep reasoning to one or two sentences.")
+	b.WriteString("\nGive verdict as your categorical call (likely-real, uncertain, or likely-ghost), and confidence as how certain you are of that verdict — from 0.0 (unsure) to 1.0 (certain) — NOT how legitimate the job is. Keep reasoning to one or two sentences.")
 	return b.String()
 }
 
