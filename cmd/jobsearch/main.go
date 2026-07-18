@@ -81,7 +81,11 @@ func run() error {
 	}
 	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
 
-	client := apify.New(token)
+	var apifyOpts []apify.Option
+	if base := os.Getenv("APIFY_BASE_URL"); base != "" {
+		apifyOpts = append(apifyOpts, apify.WithBaseURL(base)) // point at a mock/proxy/self-hosted Apify
+	}
+	client := apify.New(token, apifyOpts...)
 	resolver := buildResolver(wl, splitCSV(*sources))
 	now := time.Now()
 
@@ -150,10 +154,14 @@ func run() error {
 		return err
 	}
 	if limited {
+		noun := "listings"
+		if len(listings) == 1 {
+			noun = "listing"
+		}
 		fmt.Fprintf(os.Stderr,
 			"\n⚠ DISCLAIMER: Apify %s reached during ingest. These results are a PARTIAL collection "+
-				"(%d listings from the queries that completed before the limit), not the full watch-list.\n",
-			limitReason, len(listings))
+				"(%d %s from the queries that completed before the limit), not the full watch-list.\n",
+			limitReason, len(listings), noun)
 	}
 	return nil
 }
