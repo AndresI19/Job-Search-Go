@@ -1,18 +1,20 @@
 // Command render turns a results CSV (as written by jobsearch) into a formatted
-// .xlsx for review: each row is tinted by its score (green/amber/red — so a
-// separate confidence column is unnecessary), the title is a trimmed clickable
-// hyperlink to the posting (the url column is folded into it), salary shows as
-// currency, dates as dd-mm-yyyy, every cell is bordered, and the header is
-// frozen and auto-filterable (filter by location, salary, years, etc.).
+// .xlsx for review. Rather than colouring whole rows, it emphasises specific
+// cells: the company when it is Fortune 500, and the salary columns (one shade
+// when a salary exists, a stronger shade when the range reaches above $170k).
+// The title is a trimmed clickable hyperlink, dates show dd-mm-yyyy, every cell
+// is bordered, and the header is frozen and auto-filterable.
 //
 //	render --in results.csv --out results.xlsx
 package main
 
 import (
+	_ "embed"
 	"encoding/csv"
 	"flag"
 	"fmt"
 	"os"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -20,10 +22,22 @@ import (
 	"github.com/xuri/excelize/v2"
 )
 
-// numericCols are written as numbers (not text) so they sort/filter correctly.
+//go:embed fortune500.txt
+var fortune500Raw string
+
+const highSalary = 170000 // a salary range whose max reaches this gets the stronger emphasis
+
+// fill colours.
+const (
+	fillF500     = "FFE699" // gold — Fortune 500 company
+	fillSalary   = "E2EFDA" // light green — a salary is published
+	fillSalaryHi = "A9D08E" // stronger green — range reaches above $170k
+	fillHeaderBg = "1F3B73"
+	borderColor  = "D9D9D9"
+)
+
 var numericCols = map[string]bool{"score": true, "salary_min": true, "salary_max": true, "applicants": true, "years_experience": true}
 
-// colWidth overrides the default width for a few wide/narrow columns.
 var colWidth = map[string]float64{"title": 40, "company": 22, "location": 22, "reasoning": 90, "verified_via": 26, "coverage": 18, "years_experience": 10}
 
 func main() {
@@ -60,11 +74,13 @@ func run() error {
 		}
 		return -1
 	}
-	postedCol, urlCol, scoreCol, titleCol := idx("posted"), idx("url"), idx("score"), idx("title")
-	salaryCol := map[int]bool{idx("salary_min"): true, idx("salary_max"): true}
+	postedCol, urlCol, titleCol := idx("posted"), idx("url"), idx("title")
+	companyCol, salMinCol, salMaxCol := idx("company"), idx("salary_min"), idx("salary_max")
+	salaryCol := map[int]bool{salMinCol: true, salMaxCol: true}
+
+	f500 := loadF500()
 
 	// The url is folded into the title hyperlink, so it is not its own column.
-	// outCol maps each input column to its output column, or -1 if omitted.
 	outCol := make([]int, len(header))
 	oc := 0
 	for c := range header {
@@ -84,8 +100,8 @@ func run() error {
 	}
 
 	border := []excelize.Border{
-		{Type: "left", Style: 1, Color: "D9D9D9"}, {Type: "right", Style: 1, Color: "D9D9D9"},
-		{Type: "top", Style: 1, Color: "D9D9D9"}, {Type: "bottom", Style: 1, Color: "D9D9D9"},
+		{Type: "left", Style: 1, Color: borderColor}, {Type: "right", Style: 1, Color: borderColor},
+		{Type: "top", Style: 1, Color: borderColor}, {Type: "bottom", Style: 1, Color: borderColor},
 	}
 	cache := map[string]int{}
 	styleFor := func(fillHex, numFmt string) int {
@@ -107,7 +123,7 @@ func run() error {
 	}
 	headStyle, _ := xl.NewStyle(&excelize.Style{
 		Font: &excelize.Font{Bold: true, Color: "FFFFFF"}, Border: border,
-		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{"1F3B73"}},
+		Fill:      excelize.Fill{Type: "pattern", Pattern: 1, Color: []string{fillHeaderBg}},
 		Alignment: &excelize.Alignment{Vertical: "center"},
 	})
 
@@ -122,14 +138,22 @@ func run() error {
 	lastHeader, _ := excelize.CoordinatesToCellName(outN, 1)
 	_ = xl.SetCellStyle(*sheet, "A1", lastHeader, headStyle)
 
-	// Data rows.
 	for r := 1; r < len(rows); r++ {
 		row := rows[r]
-		fill := scoreFill(row, scoreCol)
 		url := ""
 		if urlCol >= 0 && urlCol < len(row) {
 			url = row[urlCol]
 		}
+		isF500 := companyCol >= 0 && companyCol < len(row) && f500.match(row[companyCol])
+		// A salary "exists" if either bound is set; it's "high" if the max reaches the bar.
+		salaryFill := ""
+		if numOf(row, salMinCol) > 0 || numOf(row, salMaxCol) > 0 {
+			salaryFill = fillSalary
+			if numOf(row, salMaxCol) >= highSalary {
+				salaryFill = fillSalaryHi
+			}
+		}
+
 		for c, val := range row {
 			if outCol[c] < 0 {
 				continue
@@ -139,7 +163,15 @@ func run() error {
 				name = strings.ToLower(header[c])
 			}
 			cell, _ := excelize.CoordinatesToCellName(outCol[c]+1, r+1)
-			numFmt := ""
+
+			fill, numFmt := "", ""
+			switch {
+			case c == companyCol && isF500:
+				fill = fillF500
+			case salaryCol[c] && salaryFill != "":
+				fill = salaryFill
+			}
+
 			switch {
 			case c == titleCol:
 				_ = xl.SetCellValue(*sheet, cell, val)
@@ -189,30 +221,73 @@ func run() error {
 	return xl.SaveAs(*out)
 }
 
-// scoreFill maps a row's score to Excel's good/neutral/bad fills, matching the
-// verdict thresholds (>=0.66 real, <=0.33 ghost).
-func scoreFill(row []string, scoreCol int) string {
-	if scoreCol < 0 || scoreCol >= len(row) {
-		return ""
+func numOf(row []string, col int) float64 {
+	if col < 0 || col >= len(row) {
+		return 0
 	}
-	sc, err := strconv.ParseFloat(row[scoreCol], 64)
-	if err != nil {
-		return ""
-	}
-	switch {
-	case sc >= 0.66:
-		return "C6EFCE"
-	case sc <= 0.33:
-		return "FFC7CE"
-	default:
-		return "FFEB9C"
-	}
+	v, _ := strconv.ParseFloat(row[col], 64)
+	return v
 }
 
-// trimURL drops the query string so a long tracking URL links to the clean job page.
 func trimURL(u string) string {
 	if i := strings.IndexByte(u, '?'); i >= 0 {
 		return u[:i]
 	}
 	return u
+}
+
+// f500Set matches company names against the embedded Fortune 500 list.
+type f500Set struct{ names map[string]bool }
+
+var legalSuffix = map[string]bool{
+	"inc": true, "incorporated": true, "corp": true, "corporation": true, "co": true,
+	"company": true, "llc": true, "ltd": true, "limited": true, "plc": true,
+	"holdings": true, "group": true, "sa": true, "ag": true,
+}
+
+var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
+
+// normCompany lowercases, strips punctuation and a leading "the", and drops a
+// trailing legal suffix, so "Reddit, Inc." and "Reddit" normalize the same.
+func normCompany(s string) string {
+	words := strings.Fields(nonAlnum.ReplaceAllString(strings.ToLower(s), " "))
+	if len(words) > 1 && words[0] == "the" {
+		words = words[1:]
+	}
+	if len(words) > 1 && legalSuffix[words[len(words)-1]] {
+		words = words[:len(words)-1]
+	}
+	return strings.Join(words, " ")
+}
+
+func loadF500() f500Set {
+	s := f500Set{names: map[string]bool{}}
+	for _, line := range strings.Split(fortune500Raw, "\n") {
+		line = strings.TrimSpace(line)
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if n := normCompany(line); n != "" {
+			s.names[n] = true
+		}
+	}
+	return s
+}
+
+// match reports whether company is (or starts with, on a word boundary) a
+// Fortune 500 name — so "Amazon Web Services" still matches "Amazon".
+func (s f500Set) match(company string) bool {
+	n := normCompany(company)
+	if n == "" {
+		return false
+	}
+	if s.names[n] {
+		return true
+	}
+	for name := range s.names {
+		if strings.HasPrefix(n, name+" ") {
+			return true
+		}
+	}
+	return false
 }

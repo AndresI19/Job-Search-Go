@@ -224,18 +224,23 @@ func dropGhosts(results []model.Result) []model.Result {
 	return kept
 }
 
-// matchLocation keeps results whose location matches the filter (case-insensitive
-// substring). The special value "remote" also matches listings flagged remote,
-// since a remote role's location text is often a company HQ.
+// matchLocation keeps results whose location matches any of the comma-separated
+// filter terms (case-insensitive substring). The term "remote" also matches
+// listings flagged remote — so "Boston,New York,Los Angeles,remote" keeps those
+// three metros plus any remote role.
 func matchLocation(results []model.Result, filter string) []model.Result {
-	filter = strings.ToLower(strings.TrimSpace(filter))
-	if filter == "" {
+	terms := splitCSV(strings.ToLower(filter))
+	if len(terms) == 0 {
 		return results
 	}
 	kept := results[:0]
 	for _, r := range results {
-		if strings.Contains(strings.ToLower(r.Listing.Location), filter) || (filter == "remote" && r.Listing.Remote) {
-			kept = append(kept, r)
+		loc := strings.ToLower(r.Listing.Location)
+		for _, t := range terms {
+			if strings.Contains(loc, t) || (t == "remote" && r.Listing.Remote) {
+				kept = append(kept, r)
+				break
+			}
 		}
 	}
 	return kept
