@@ -83,6 +83,21 @@ func TestParseSalary(t *testing.T) {
 	}
 }
 
+func TestParseYears(t *testing.T) {
+	cases := map[string]int{
+		"5+ years of experience":     5,
+		"3-5 years in backend":       3,
+		"minimum of 7 years":         7,
+		"no experience level stated": 0,
+		"requires 25 years":          0, // out of the plausible 1-20 range
+	}
+	for in, want := range cases {
+		if got := parseYears(in); got != want {
+			t.Errorf("parseYears(%q) = %d, want %d", in, got, want)
+		}
+	}
+}
+
 func TestParseApplicants(t *testing.T) {
 	cases := map[string]int{"25": 25, "Over 200 applicants": 200, "": -1, "n/a": -1}
 	for in, want := range cases {

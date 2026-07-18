@@ -16,7 +16,7 @@ func TestWriteCSV(t *testing.T) {
 			Listing: model.Listing{
 				Title: "Backend Engineer", Company: "Stripe", Location: "Remote, US",
 				Remote: true, Posted: time.Date(2026, 6, 1, 0, 0, 0, 0, time.UTC),
-				ApplicantCount: 42, SalaryMin: 120000, SalaryMax: 160000,
+				ApplicantCount: 42, YearsExperience: 5, SalaryMin: 120000, SalaryMax: 160000,
 				ApplyType: "external", URL: "https://example.com/1",
 				Source: "apify-linkedin",
 			},
@@ -55,11 +55,13 @@ func TestWriteCSV(t *testing.T) {
 		0:  "Backend Engineer",             // title
 		3:  "true",                         // remote bool
 		4:  "2026-06-01",                   // posted normalized to date
-		5:  "42",                           // applicants
+		5:  "5",                            // years_experience
 		6:  "120000",                       // salary_min
 		7:  "160000",                       // salary_max
-		12: "0.91",                         // score formatted to 2dp
-		14: "linkedin-internal;greenhouse", // coverage joined
+		11: "0.91",                         // score formatted to 2dp
+		12: "42",                           // applicants (after score)
+		14: "greenhouse:stripe matched",    // verified_via (after reasoning)
+		15: "linkedin-internal;greenhouse", // coverage joined (after reasoning)
 	} {
 		if got[col] != want {
 			t.Errorf("row1 col%d = %q, want %q", col, got[col], want)
@@ -72,9 +74,12 @@ func TestWriteCSV(t *testing.T) {
 		t.Errorf("sparse posted = %q, want empty", sparse[4])
 	}
 	if sparse[5] != "" {
-		t.Errorf("sparse applicants = %q, want empty", sparse[5])
+		t.Errorf("sparse years_experience = %q, want empty", sparse[5])
 	}
 	if sparse[6] != "" || sparse[7] != "" {
 		t.Errorf("sparse salary = %q/%q, want empty", sparse[6], sparse[7])
+	}
+	if sparse[12] != "" {
+		t.Errorf("sparse applicants = %q, want empty", sparse[12])
 	}
 }

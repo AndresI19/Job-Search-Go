@@ -22,6 +22,7 @@ type Listing struct {
 	Remote           bool
 	Posted           time.Time // zero value when unknown
 	ApplicantCount   int       // -1 when unknown or bucketed ("over 200")
+	YearsExperience  int       // minimum years the posting asks for; 0 when not stated
 	SalaryMin        int       // annual USD; 0 when the source gives no salary
 	SalaryMax        int       // annual USD; 0 when the source gives no salary
 	ApplyType        string    // "easy_apply", "external", or "" when unknown

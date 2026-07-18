@@ -47,6 +47,7 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			applyType = "external"
 		}
 		salMin, salMax := parseSalary(r.Salary)
+		desc := description(r)
 		out = append(out, model.Listing{
 			Source:           Source,
 			JobID:            r.ID,
@@ -57,12 +58,13 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			Remote:           strings.Contains(strings.ToLower(r.Location), "remote"),
 			Posted:           parseDate(r.PostedAt),
 			ApplicantCount:   parseApplicants(r.ApplicantsCount),
+			YearsExperience:  parseYears(desc),
 			SalaryMin:        salMin,
 			SalaryMax:        salMax,
 			ApplyType:        applyType,
 			ExternalApplyURL: r.ApplyURL,
 			URL:              r.Link,
-			Description:      description(r),
+			Description:      desc,
 		})
 	}
 	return out
@@ -121,6 +123,25 @@ func parseSalary(s string) (min, max int) {
 		}
 	}
 	return min, max
+}
+
+// yearsRE matches an experience requirement like "5+ years", "3-5 years", or
+// "5 years of experience". It captures the first (minimum) number.
+var yearsRE = regexp.MustCompile(`(?i)(\d{1,2})\s*\+?\s*(?:-\s*\d{1,2}\s*)?years?`)
+
+// parseYears pulls the minimum years-of-experience a description asks for,
+// bounded to a plausible 1–20 to avoid matching unrelated numbers ("2 years
+// ago"). Returns 0 when nothing plausible is found.
+func parseYears(desc string) int {
+	m := yearsRE.FindStringSubmatch(desc)
+	if m == nil {
+		return 0
+	}
+	n, err := strconv.Atoi(m[1])
+	if err != nil || n < 1 || n > 20 {
+		return 0
+	}
+	return n
 }
 
 // description prefers the Actor's plain-text field, falling back to stripping
