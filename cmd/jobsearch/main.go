@@ -51,6 +51,7 @@ func run() error {
 	sources := flag.String("sources", "", "comma-separated ATS sources to verify against (overrides the watch-list)")
 	minScore := flag.Float64("min-score", 0, "only write listings scoring at least this (0..1)")
 	location := flag.String("location", "", "keep only listings whose location matches this (e.g. remote, Boston)")
+	includeGhosts := flag.Bool("include-ghosts", false, "include likely-ghost listings (dropped by default)")
 	verbose := flag.Bool("verbose", false, "debug-level logging")
 	flag.Parse()
 
@@ -140,6 +141,9 @@ func run() error {
 	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
 	results = atLeast(results, *minScore)
 	results = matchLocation(results, *location)
+	if !*includeGhosts {
+		results = dropGhosts(results)
+	}
 
 	w := os.Stdout
 	if *out != "" {
@@ -202,6 +206,18 @@ func atLeast(results []model.Result, min float64) []model.Result {
 	kept := results[:0]
 	for _, r := range results {
 		if r.Verdict.Score >= min {
+			kept = append(kept, r)
+		}
+	}
+	return kept
+}
+
+// dropGhosts removes listings the verdict flags as likely-ghost, keeping the
+// real and uncertain ones — the roles actually worth a look.
+func dropGhosts(results []model.Result) []model.Result {
+	kept := results[:0]
+	for _, r := range results {
+		if r.Verdict.Confidence != model.LikelyGhost {
 			kept = append(kept, r)
 		}
 	}
