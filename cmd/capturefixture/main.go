@@ -60,22 +60,25 @@ func main() {
 	fmt.Fprintf(os.Stderr, "running actor %s (count=%d)…\n", actorID, *count)
 	items, err := client.Run(ctx, actorID, input)
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 
 	if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 	pretty, err := json.MarshalIndent(items, "", "  ")
 	if err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 	if err := os.WriteFile(*out, pretty, 0o644); err != nil {
-		fmt.Fprintln(os.Stderr, "error:", err)
-		os.Exit(1)
+		fatal(err)
 	}
 	fmt.Fprintf(os.Stderr, "saved %d items → %s\n", len(items), *out)
+}
+
+// fatal reports a runtime failure to stderr and exits with status 1. Usage
+// errors (missing -url or APIFY_TOKEN) exit 2 separately and are left inline.
+func fatal(err error) {
+	fmt.Fprintln(os.Stderr, "error:", err)
+	os.Exit(1)
 }
