@@ -1,4 +1,9 @@
-package greenhouse
+// Package ats holds logic shared by the ATS verification sources (Greenhouse,
+// Lever): matching a scraped listing to a board requisition by title, and
+// turning source HTML into plain text. The sources themselves stay thin — each
+// only knows how to fetch and shape its own API — while the cross-source
+// concerns live here so they are defined once.
+package ats
 
 import (
 	"regexp"
