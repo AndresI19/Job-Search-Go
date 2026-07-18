@@ -75,6 +75,8 @@ Both are read from the environment; no secrets live in the code.
 
 ```
 cmd/jobsearch/      entry point
+cmd/capturefixture/ one-shot Apify ingest → offline test fixture
+internal/apify/     Apify REST client (trigger → poll → fetch)
 internal/model/     core domain types: Listing, Verdict, Source
 internal/output/    CSV writer
 ```
