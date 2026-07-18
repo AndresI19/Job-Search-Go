@@ -12,14 +12,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"html"
 	"io"
 	"net/http"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
 
+	"github.com/AndresI19/Job-Search-Go/internal/ats"
 	"github.com/AndresI19/Job-Search-Go/internal/model"
 )
 
@@ -112,7 +111,7 @@ func (c *Client) Fetch(ctx context.Context, query string) ([]model.Listing, erro
 			Posted:         parseTime(j.UpdatedAt),
 			ApplicantCount: -1, // an ATS board does not report applicant counts
 			URL:            j.AbsoluteURL,
-			Description:    stripHTML(j.Content),
+			Description:    ats.StripHTML(j.Content),
 		})
 	}
 	return listings, nil
@@ -127,16 +126,4 @@ func parseTime(s string) time.Time {
 		}
 	}
 	return time.Time{}
-}
-
-var tagRE = regexp.MustCompile(`<[^>]*>`)
-
-// stripHTML turns Greenhouse's entity-encoded HTML content into plain text.
-// The content field arrives entity-encoded, so the first unescape yields markup;
-// tags are dropped and a second unescape resolves entities that were inside it.
-func stripHTML(s string) string {
-	s = html.UnescapeString(s)
-	s = tagRE.ReplaceAllString(s, " ")
-	s = html.UnescapeString(s)
-	return strings.Join(strings.Fields(s), " ")
 }

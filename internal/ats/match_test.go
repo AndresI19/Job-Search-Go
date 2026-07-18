@@ -1,4 +1,4 @@
-package greenhouse
+package ats
 
 import (
 	"testing"
@@ -49,5 +49,13 @@ func TestMatch(t *testing.T) {
 func TestMatchEmptyBoard(t *testing.T) {
 	if _, ok := Match(model.Listing{Title: "Anything"}, nil); ok {
 		t.Error("empty board should never match")
+	}
+}
+
+func TestStripHTML(t *testing.T) {
+	// Entity-encoded HTML, as ATS APIs return it.
+	in := "&lt;p&gt;Build &amp;amp; ship.&lt;/p&gt;&lt;ul&gt;&lt;li&gt;Go&lt;/li&gt;&lt;/ul&gt;"
+	if got, want := StripHTML(in), "Build & ship. Go"; got != want {
+		t.Errorf("StripHTML = %q, want %q", got, want)
 	}
 }
