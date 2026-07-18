@@ -8,6 +8,7 @@ package pipeline
 
 import (
 	"context"
+	"log/slog"
 	"sort"
 	"sync"
 
@@ -20,9 +21,12 @@ import (
 // Verify runs every listing through ATS → Claude → combine and returns the
 // scored Results sorted best-first (highest legitimacy score). workers bounds how
 // many listings are in flight at once; a value below 1 is treated as 1.
-func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights, workers int) []model.Result {
+func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights, workers int, log *slog.Logger) []model.Result {
 	if workers < 1 {
 		workers = 1
+	}
+	if log == nil {
+		log = slog.New(slog.DiscardHandler)
 	}
 	results := make([]model.Result, len(listings))
 	sem := make(chan struct{}, workers) // bounds concurrency; the only ceilings are external rate limits
@@ -33,7 +37,7 @@ func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolve
 		go func(i int, l model.Listing) {
 			defer wg.Done()
 			defer func() { <-sem }()
-			results[i] = verifyOne(ctx, l, resolver, jd, w) // each goroutine owns results[i]; no lock needed
+			results[i] = verifyOne(ctx, l, resolver, jd, w, log) // each goroutine owns results[i]; no lock needed
 		}(i, l)
 	}
 	wg.Wait()
@@ -45,7 +49,7 @@ func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolve
 }
 
 // verifyOne runs the sequential chain for a single listing.
-func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights) model.Result {
+func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights, log *slog.Logger) model.Result {
 	// 1 · ATS: resolve the company's board and look for a matching requisition.
 	var atsRes score.ATSResult
 	var candidates []model.Listing
@@ -55,14 +59,19 @@ func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd 
 			atsRes.Matched = true
 		}
 		candidates = res.Listings
+		log.Debug("ats resolved", "company", l.Company, "source", res.Source, "slug", res.Slug, "matched", atsRes.Matched)
+	} else {
+		log.Debug("no ats board found", "company", l.Company)
 	}
 
 	// 2 · Claude: judge the listing against the ATS candidates. A judge error is
 	// degraded to no Claude coverage rather than failing the whole listing; the
-	// combiner scores on the ATS signal alone (logging is issue #27).
+	// combiner then scores on the ATS signal alone.
 	var verdict *model.Verdict
 	if v, err := jd.Evaluate(ctx, judge.Input{Listing: l, Candidates: candidates}); err == nil {
 		verdict = &v
+	} else {
+		log.Warn("judge failed; scoring on ATS signal only", "company", l.Company, "title", l.Title, "err", err)
 	}
 
 	// 3 · Combine into the final coverage-aware verdict.
