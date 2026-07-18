@@ -1,0 +1,17 @@
+# Example watch-list for `jobsearch --watch examples/watch.yaml`.
+# Values in `defaults` apply to every query unless the query overrides them.
+defaults:
+  location: remote-us
+  sources: [greenhouse, lever] # ATS boards to verify listings against
+  max_age_days: 21             # drop stale reposts (also a LinkedIn search facet)
+
+queries:
+  - field: "backend engineer"  # job field / search keywords (required)
+    salary_min: 150000         # minimum annual salary, USD
+    salary_max: 220000
+    seniority: [mid, senior]
+
+  - field: "platform engineer"
+    salary_min: 160000
+    location: remote-global
+    remote: true
