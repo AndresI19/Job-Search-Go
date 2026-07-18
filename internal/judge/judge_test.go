@@ -1,6 +1,7 @@
 package judge
 
 import (
+	"math"
 	"strings"
 	"testing"
 
@@ -30,19 +31,31 @@ func TestBuildPromptNoCandidates(t *testing.T) {
 }
 
 func TestParseVerdictToModel(t *testing.T) {
-	raw, err := parseVerdict([]byte(`{"matched":true,"confidence":0.68,"verdict":"likely-real","reasoning":"ok"}`))
-	if err != nil {
-		t.Fatal(err)
+	// Score is derived from the verdict (direction) and confidence (distance from
+	// the 0.5 midpoint) — the number must agree with the words.
+	cases := []struct {
+		json      string
+		wantConf  model.Confidence
+		wantScore float64
+	}{
+		{`{"matched":true,"verdict":"likely-real","confidence":0.68,"reasoning":"ok"}`, model.LikelyReal, 0.84},
+		// The regression the live run exposed: a confident ghost must score LOW.
+		{`{"matched":false,"verdict":"likely-ghost","confidence":0.85,"reasoning":"stale"}`, model.LikelyGhost, 0.075},
+		{`{"matched":false,"verdict":"uncertain","confidence":0.9,"reasoning":"unclear"}`, model.Uncertain, 0.5},
+		{`{"matched":true,"verdict":"likely-real","confidence":1.5,"reasoning":"sure"}`, model.LikelyReal, 1.0}, // clamped
 	}
-	v := raw.toModel()
-	if v.Confidence != model.LikelyReal {
-		t.Errorf("confidence = %q, want likely-real", v.Confidence)
-	}
-	if v.Score != 0.68 {
-		t.Errorf("score = %v, want 0.68", v.Score)
-	}
-	if v.Reasoning != "ok" {
-		t.Errorf("reasoning = %q", v.Reasoning)
+	for _, tc := range cases {
+		raw, err := parseVerdict([]byte(tc.json))
+		if err != nil {
+			t.Fatalf("parseVerdict(%s): %v", tc.json, err)
+		}
+		v := raw.toModel()
+		if v.Confidence != tc.wantConf {
+			t.Errorf("%s: Confidence = %q, want %q", tc.json, v.Confidence, tc.wantConf)
+		}
+		if math.Abs(v.Score-tc.wantScore) > 1e-9 {
+			t.Errorf("%s: Score = %v, want %v", tc.json, v.Score, tc.wantScore)
+		}
 	}
 }
 

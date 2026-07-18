@@ -36,7 +36,9 @@ type Judge interface {
 
 // verdictSchema is the JSON shape both backends ask Claude to return. Coverage
 // and VerifiedVia on model.Verdict are filled by the pipeline, not the judge.
-const verdictSchema = `{"type":"object","properties":{"matched":{"type":"boolean"},"confidence":{"type":"number"},"verdict":{"type":"string","enum":["likely-real","uncertain","likely-ghost"]},"reasoning":{"type":"string"}},"required":["matched","verdict","reasoning"]}`
+// confidence is certainty in the verdict, NOT a legitimacy score — the two are
+// combined into a legitimacy score in toModel.
+const verdictSchema = `{"type":"object","properties":{"matched":{"type":"boolean"},"verdict":{"type":"string","enum":["likely-real","uncertain","likely-ghost"]},"confidence":{"type":"number","description":"certainty in the verdict, 0.0 (unsure) to 1.0 (certain)"},"reasoning":{"type":"string"}},"required":["matched","verdict","confidence","reasoning"]}`
 
 // rawVerdict is the JSON both backends decode before mapping to model.Verdict.
 type rawVerdict struct {
@@ -49,8 +51,30 @@ type rawVerdict struct {
 func (r rawVerdict) toModel() model.Verdict {
 	return model.Verdict{
 		Confidence: model.Confidence(r.Verdict),
-		Score:      r.Confidence,
+		Score:      legitimacyScore(r.Verdict, r.Confidence),
 		Reasoning:  r.Reasoning,
+	}
+}
+
+// legitimacyScore turns the model's categorical verdict and its certainty in
+// that verdict into a 0..1 legitimacy score (0 = ghost, 1 = real). The verdict
+// sets the direction; the certainty sets how far from the neutral 0.5 midpoint.
+// This keeps the number aligned with the words — a confident likely-ghost scores
+// LOW, not high — which reading the raw confidence as the score silently inverted.
+func legitimacyScore(verdict string, certainty float64) float64 {
+	switch {
+	case certainty < 0:
+		certainty = 0
+	case certainty > 1:
+		certainty = 1
+	}
+	switch model.Confidence(verdict) {
+	case model.LikelyReal:
+		return 0.5 + 0.5*certainty
+	case model.LikelyGhost:
+		return 0.5 - 0.5*certainty
+	default: // uncertain, or an unrecognized verdict
+		return 0.5
 	}
 }
 
@@ -76,7 +100,8 @@ func buildPrompt(in Input) string {
 			fmt.Fprintf(&b, "  - %s (%s)\n", c.Title, c.Location)
 		}
 	}
-	b.WriteString("\nSet matched=true only if the listing clearly corresponds to one of the candidate requisitions. Keep reasoning to one or two sentences.")
+	b.WriteString("\nSet matched=true only if the listing clearly corresponds to one of the candidate requisitions.\n")
+	b.WriteString("Give verdict as your categorical call (likely-real, uncertain, or likely-ghost), and confidence as how certain you are of that verdict — from 0.0 (unsure) to 1.0 (certain) — NOT how legitimate the job is. Keep reasoning to one or two sentences.")
 	return b.String()
 }
 
