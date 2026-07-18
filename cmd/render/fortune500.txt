@@ -1,0 +1,262 @@
+# Curated Fortune 500 company names (approximate snapshot) used to emphasize
+# big-company listings. Names are normalized (lowercased, legal suffixes and
+# punctuation stripped) before matching, so "Reddit, Inc." -> "reddit". Add or
+# remove lines to tune. Blank lines and #-comments are ignored.
+Walmart
+Amazon
+Apple
+UnitedHealth Group
+Berkshire Hathaway
+CVS Health
+ExxonMobil
+Alphabet
+McKesson
+Cencora
+Costco
+JPMorgan Chase
+Microsoft
+Cardinal Health
+Chevron
+Cigna
+Ford Motor
+Bank of America
+General Motors
+Elevance Health
+Citigroup
+Centene
+Home Depot
+Marathon Petroleum
+Kroger
+Phillips 66
+Fannie Mae
+Walgreens Boots Alliance
+Valero Energy
+Meta
+Verizon
+AT&T
+Comcast
+Wells Fargo
+Goldman Sachs
+Morgan Stanley
+Freddie Mac
+Target
+Humana
+State Farm
+Dell Technologies
+Archer Daniels Midland
+PepsiCo
+United Parcel Service
+FedEx
+Walt Disney
+Procter & Gamble
+Albertsons
+Sysco
+RTX
+Lockheed Martin
+General Electric
+Boeing
+IBM
+Intel
+HP
+Prudential Financial
+Nvidia
+Tesla
+StoneX Group
+Caterpillar
+Merck
+Cisco Systems
+Pfizer
+Progressive
+Coca-Cola
+American Express
+Nike
+Deere
+Charter Communications
+Abbott Laboratories
+New York Life Insurance
+Allstate
+TIAA
+Best Buy
+TJX
+Bristol-Myers Squibb
+Oracle
+United Airlines
+Coterra
+Honeywell International
+Delta Air Lines
+American Airlines
+Tyson Foods
+World Kinect
+Nationwide
+Liberty Mutual Insurance
+Enterprise Products Partners
+Thermo Fisher Scientific
+Johnson & Johnson
+Qualcomm
+Publix Super Markets
+General Dynamics
+Northwestern Mutual
+Raytheon
+Southwest Airlines
+Massachusetts Mutual Life Insurance
+American International Group
+Capital One Financial
+Plains GP Holdings
+DuPont
+Dow
+Emerson Electric
+Union Pacific
+Northrop Grumman
+Danaher
+Gilead Sciences
+Eli Lilly
+Salesforce
+Netflix
+Uber
+Broadcom
+Paccar
+Adobe
+Cummins
+Nucor
+Lennar
+General Mills
+Kimberly-Clark
+CHS
+US Foods
+Performance Food Group
+Bunge
+Aflac
+MetLife
+Travelers
+Hartford Financial
+Kraft Heinz
+Mondelez International
+Molson Coors
+Kellanova
+Colgate-Palmolive
+Estee Lauder
+3M
+Illinois Tool Works
+Parker Hannifin
+Stanley Black & Decker
+Automatic Data Processing
+Paychex
+Visa
+Mastercard
+PayPal
+Block
+Fiserv
+Fidelity National Information Services
+Global Payments
+Synchrony Financial
+Discover Financial Services
+Charles Schwab
+BlackRock
+Franklin Resources
+T. Rowe Price
+Marsh & McLennan
+Aon
+Arthur J. Gallagher
+Booking Holdings
+Expedia Group
+Marriott International
+Hilton
+Las Vegas Sands
+Caesars Entertainment
+Starbucks
+McDonald's
+Yum! Brands
+Chipotle Mexican Grill
+Darden Restaurants
+Conagra Brands
+Hershey
+J.M. Smucker
+Campbell Soup
+Kraft
+Whirlpool
+Newell Brands
+VF
+Ralph Lauren
+Levi Strauss
+PVH
+Under Armour
+Gap
+Nordstrom
+Macy's
+Kohl's
+Dollar General
+Dollar Tree
+Ross Stores
+AutoZone
+O'Reilly Automotive
+Advance Auto Parts
+Genuine Parts
+Tractor Supply
+Ulta Beauty
+Williams-Sonoma
+Bath & Body Works
+Lowe's
+Sherwin-Williams
+PPG Industries
+Ecolab
+Air Products and Chemicals
+Linde
+LyondellBasell
+Celanese
+Eastman Chemical
+International Paper
+WestRock
+Ball
+Corning
+Applied Materials
+Lam Research
+KLA
+Micron Technology
+Texas Instruments
+Analog Devices
+Western Digital
+Seagate Technology
+Motorola Solutions
+Arista Networks
+Juniper Networks
+NetApp
+VMware
+ServiceNow
+Workday
+Autodesk
+Intuit
+Synopsys
+Cadence Design Systems
+Palo Alto Networks
+Fortinet
+CrowdStrike
+Datadog
+Snowflake
+Palantir Technologies
+Twilio
+Cloudflare
+DoorDash
+Airbnb
+Coinbase
+Robinhood
+Reddit
+Pinterest
+Snap
+Spotify
+Zoom
+Dropbox
+Roku
+Electronic Arts
+Take-Two Interactive
+Activision Blizzard
+Warner Bros. Discovery
+Paramount Global
+Fox
+Marvell Technology
+ON Semiconductor
+GlobalFoundries
+Skyworks Solutions
+Corteva
+Mosaic
+CF Industries
+Nutrien
