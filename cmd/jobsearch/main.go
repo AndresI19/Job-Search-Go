@@ -12,6 +12,7 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"time"
@@ -45,6 +46,7 @@ func run() error {
 	out := flag.String("out", "", "output CSV path (default: stdout)")
 	workers := flag.Int("workers", 8, "max listings verified concurrently")
 	count := flag.Int("count", 25, "listings to scrape per query (Actor minimum 10)")
+	verbose := flag.Bool("verbose", false, "debug-level logging")
 	flag.Parse()
 
 	if *watch == "" {
@@ -68,24 +70,35 @@ func run() error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 
+	level := slog.LevelInfo
+	if *verbose {
+		level = slog.LevelDebug
+	}
+	logger := slog.New(slog.NewTextHandler(os.Stderr, &slog.HandlerOptions{Level: level}))
+
 	client := apify.New(token)
 	resolver := buildResolver(wl)
 	now := time.Now()
 
 	// Ingest each query, normalize, freshness-filter, and dedup across queries
-	// (a listing can match more than one search).
+	// (a listing can match more than one search). A query that fails to ingest is
+	// logged and skipped so one dead search can't sink the whole run.
 	seen := map[string]bool{}
 	var listings []model.Listing
+	var failed int
 	for _, q := range wl.Queries {
-		fmt.Fprintf(os.Stderr, "ingest: %q…\n", q.Field)
+		logger.Info("ingesting query", "field", q.Field)
 		raw, err := client.Run(ctx, actorID, map[string]any{
 			"urls":          []string{q.SearchURL()},
 			"count":         *count,
 			"scrapeCompany": true,
 		})
 		if err != nil {
-			return fmt.Errorf("ingest %q: %w", q.Field, err)
+			logger.Error("ingest failed; skipping query", "field", q.Field, "err", err)
+			failed++
+			continue
 		}
+		before := len(listings)
 		for _, l := range linkedin.Normalize(raw) {
 			if !q.Fresh(l, now) || seen[l.JobID] {
 				continue
@@ -93,10 +106,14 @@ func run() error {
 			seen[l.JobID] = true
 			listings = append(listings, l)
 		}
+		logger.Info("ingested query", "field", q.Field, "kept", len(listings)-before)
+	}
+	if len(wl.Queries) > 0 && failed == len(wl.Queries) {
+		return fmt.Errorf("all %d queries failed to ingest", failed)
 	}
 
-	fmt.Fprintf(os.Stderr, "verifying %d listings (%d workers)…\n", len(listings), *workers)
-	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers)
+	logger.Info("verifying", "listings", len(listings), "workers", *workers)
+	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
 
 	w := os.Stdout
 	if *out != "" {
