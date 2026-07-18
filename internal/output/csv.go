@@ -13,8 +13,8 @@ import (
 // csvHeader is the column order written by WriteCSV. Keep rowFor in sync.
 var csvHeader = []string{
 	"title", "company", "location", "remote", "posted",
-	"applicants", "salary_min", "salary_max", "apply_type", "url", "source",
-	"confidence", "score", "verified_via", "coverage", "reasoning",
+	"years_experience", "salary_min", "salary_max", "apply_type", "url", "source",
+	"score", "applicants", "reasoning", "verified_via", "coverage",
 }
 
 // WriteCSV writes results as CSV (with a header row) to w. It flushes before
@@ -49,23 +49,31 @@ func rowFor(r model.Result) []string {
 		applicants = strconv.Itoa(l.ApplicantCount)
 	}
 
+	years := ""
+	if l.YearsExperience > 0 {
+		years = strconv.Itoa(l.YearsExperience)
+	}
+
+	// Column order is presentation-oriented: identity, then what the role asks
+	// for, then the verdict (score drives the row colour in render, so no separate
+	// confidence column), with the verbose verified/coverage fields trailing.
 	return []string{
 		l.Title,
 		l.Company,
 		l.Location,
 		strconv.FormatBool(l.Remote),
 		posted,
-		applicants,
+		years,
 		usdOrEmpty(l.SalaryMin),
 		usdOrEmpty(l.SalaryMax),
 		l.ApplyType,
 		l.URL,
 		l.Source,
-		string(v.Confidence),
 		strconv.FormatFloat(v.Score, 'f', 2, 64),
+		applicants,
+		v.Reasoning,
 		v.VerifiedVia,
 		strings.Join(v.Coverage, ";"),
-		v.Reasoning,
 	}
 }
 
