@@ -87,9 +87,18 @@ func (s *server) modeLine() string {
 }
 
 // config tells the UI whether Admin (real) runs are available and whether they
-// spend, so the corner profile switch can enable and label Admin correctly.
+// spend (for the corner profile switch), plus the profession catalog the search
+// multiselect renders.
 func (s *server) config(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, map[string]bool{"realReady": s.realReady, "spends": s.spends})
+	var fields []map[string]any
+	for _, f := range fieldCatalog {
+		roles := make([]map[string]any, len(f.Roles))
+		for i, r := range f.Roles {
+			roles[i] = map[string]any{"key": r.Key, "label": r.Label, "match": r.Match}
+		}
+		fields = append(fields, map[string]any{"key": f.Key, "label": f.Label, "roles": roles})
+	}
+	writeJSON(w, map[string]any{"realReady": s.realReady, "spends": s.spends, "fields": fields})
 }
 
 // enableLive wires the real ingest+verify dependencies from the environment:
@@ -186,13 +195,62 @@ const (
 	maxJobCount = 10000 // hard ceiling on a run's job count
 )
 
-// runReq is a run's POST body: the profile, the requested job count, and the
-// search keywords (used only for a live scrape).
+// runReq is a run's POST body: the profile, the requested job count, the selected
+// field (mapped to a curated all-roles keyword query), and the role.
 type runReq struct {
 	profile.Profile
 	JobCount int    `json:"job_count"`
-	Keywords string `json:"keywords"`
+	Field    string `json:"field"`
 	Role     string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
+}
+
+// profRole is one role within a field: the LinkedIn keyword query it contributes
+// to the field's search, and Match — lowercase substrings that classify a listing
+// title into this role for the results' Role column.
+type profRole struct {
+	Key, Label, Query string
+	Match             []string
+}
+
+// fieldCatalog groups roles under a field. A field's search is ALL its roles OR'd
+// together — you pick the field, not individual roles. Only Software is supported
+// for now; Legal (and others) slot in as additional entries with their own roles,
+// and the UI, query, and classification handle them without further change.
+var fieldCatalog = []struct {
+	Key, Label string
+	Roles      []profRole
+}{
+	{"software", "Software", []profRole{
+		{"software-engineer", "Software Engineer", `"Software Engineer"`, []string{"software engineer", "swe", "developer", "engineer"}},
+		{"backend", "Backend", `"Backend Engineer"`, []string{"backend", "back-end", "back end"}},
+		{"frontend", "Frontend", `"Frontend Engineer"`, []string{"frontend", "front-end", "front end"}},
+		{"fullstack", "Full-Stack", `"Full Stack Engineer"`, []string{"full stack", "full-stack", "fullstack"}},
+		{"platform", "Platform / Infra", `"Platform Engineer" OR "Infrastructure Engineer"`, []string{"platform", "infrastructure", "infra"}},
+		{"devops-sre", "DevOps / SRE", `"DevOps Engineer" OR "Site Reliability Engineer"`, []string{"devops", "site reliability", "sre"}},
+		{"data-engineer", "Data Engineer", `"Data Engineer"`, []string{"data engineer"}},
+		{"ml", "ML / AI", `"Machine Learning Engineer" OR "AI Engineer"`, []string{"machine learning", "ml engineer", "ai engineer"}},
+		{"data-scientist", "Data Scientist", `"Data Scientist"`, []string{"data scientist"}},
+		{"security", "Security", `"Security Engineer"`, []string{"security"}},
+		{"mobile", "Mobile", `"iOS Engineer" OR "Android Engineer"`, []string{"ios", "android", "mobile"}},
+	}},
+	// {"legal", "Legal", []profRole{ {"attorney","Attorney",`"Attorney"`,[]string{"attorney"}}, ... }},
+}
+
+// fieldQuery is one LinkedIn keyword search covering ALL of a field's roles (OR'd),
+// defaulting to the first field when the key is unknown so a run is never empty.
+func fieldQuery(key string) string {
+	roles := fieldCatalog[0].Roles
+	for _, f := range fieldCatalog {
+		if f.Key == key {
+			roles = f.Roles
+			break
+		}
+	}
+	parts := make([]string, len(roles))
+	for i, r := range roles {
+		parts[i] = r.Query
+	}
+	return strings.Join(parts, " OR ")
 }
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
@@ -227,7 +285,7 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			s.jobsMu.Lock()
 			s.jobs[id] = j
 			s.jobsMu.Unlock()
-			go s.runReal(j, req.Keywords, p, count)
+			go s.runReal(j, fieldQuery(req.Field), p, count)
 		} else {
 			header, data, lerr := s.loadCache()
 			if lerr != nil {
