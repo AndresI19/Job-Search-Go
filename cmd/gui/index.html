@@ -38,47 +38,65 @@
       var(--bg);
     background-attachment: fixed;
   }
-  .layout { display: grid; grid-template-columns: 296px 1fr; gap: 18px; padding: 14px 18px 26px; align-items: start; }
-  /* Folded: the sidebar leaves the flow so the table owns the full width. */
-  .layout.collapsed { grid-template-columns: 1fr; }
+  /* Three columns: the filters card, the vertical fold rail, and the table. The rail is always
+     present so a folded sidebar can be brought back. */
+  .layout { display: grid; grid-template-columns: 286px auto 1fr; gap: 12px; padding: 12px 18px 24px; align-items: start; }
+  .layout.collapsed { grid-template-columns: auto 1fr; }   /* aside removed below; rail + table remain */
   .layout.collapsed > aside { display: none; }
-  @media (max-width: 820px) { .layout:not(.collapsed) { grid-template-columns: 1fr; } }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr !important; } .foldbar { display: none; } }
 
-  /* The form is a panel card with the platform's left accent rail. */
+  /* The form is a panel card with the platform's left accent rail — compacted to fit the viewport
+     height without its own scrollbar. */
   aside {
-    padding: 15px; border-radius: 16px;
+    padding: 12px; border-radius: 14px;
     background: color-mix(in srgb, var(--accent) 5%, var(--panel));
     border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
     border-left: 3px solid var(--accent); box-shadow: var(--shadow);
-    position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto;
+    position: sticky; top: 12px; max-height: calc(100vh - 24px); overflow-y: auto;
   }
-  /* The profile title, moved off the top bar into the sidebar card — the table reclaims that band. */
-  .side-head { margin: 0 0 13px; }
+  .side-head { margin: 0 0 9px; }
   .side-head h1 {
-    font-size: 18px; margin: 0 0 3px; font-weight: 820; letter-spacing: -.4px;
+    font-size: 16px; margin: 0 0 2px; font-weight: 820; letter-spacing: -.4px;
     background: linear-gradient(96deg, var(--accent), var(--accent2));
     -webkit-background-clip: text; background-clip: text; color: transparent;
   }
-  .side-head .sub { display: block; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.4; }
+  .side-head .sub { display: block; color: var(--muted); font-size: 11.5px; font-weight: 500; line-height: 1.35; }
   main { min-width: 0; }
-  /* Toggle + status share the row above the table. The toggle lives in main, NOT the sidebar, so it
-     survives the fold — a control that hides itself can't bring itself back. */
-  .mainbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
-  .toggle { padding: 7px 12px; font-size: 15px; line-height: 1; flex: none; }
-  .mainbar .status { margin: 0; }
-  fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; margin: 0 0 12px; background: var(--panel); }
-  legend { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 6px; }
-  label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 7px 0; }
+
+  /* The fold control: the home page's .arch-pull banner bar, turned vertical — an accent-tinted rail
+     with a rotating chevron, spanning the viewport height between the sidebar and the table. */
+  .foldbar {
+    position: sticky; top: 12px; height: calc(100vh - 24px); align-self: start;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 9px;
+    border: 0; border-left: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
+    border-radius: 9px; padding: 0 3px; margin: 0;
+    background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--accent) 7%, transparent));
+    color: var(--accent); font: inherit; font-weight: 700; font-size: 12px; letter-spacing: .6px;
+    cursor: pointer; transition: background .16s ease;
+  }
+  .foldbar:hover { background: color-mix(in srgb, var(--accent) 13%, transparent); }
+  .foldbar:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+  .fold-label { writing-mode: vertical-rl; text-transform: uppercase; }
+  .fold-chev { font-size: 16px; line-height: 1; transition: transform .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .layout.collapsed .fold-chev { transform: rotate(180deg); }
+  fieldset { border: 1px solid var(--line); border-radius: 11px; padding: 7px 11px 8px; margin: 0 0 6px; background: var(--panel); }
+  legend { font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 5px; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 3px 0; }
+  label.row span { font-size: 12.5px; }
   input[type=number], input[type=text] {
     background: var(--panel); color: var(--ink); border: 1px solid var(--line);
-    border-radius: 8px; padding: 5px 9px; font: inherit; width: 116px; text-align: right;
+    border-radius: 7px; padding: 4px 8px; font: inherit; width: 92px; text-align: right;
   }
   input[type=text] { width: 100%; text-align: left; }
   input:focus-visible { outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent); outline-offset: 1px; border-color: var(--accent); }
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
-  .field-full { display: block; margin: 8px 0; }
-  .field-full span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
-  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  .field-full { display: block; margin: 5px 0; }
+  .field-full span { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 3px; }
+  /* Recency: three tight fields on one row, to save the vertical space of three stacked rows. */
+  .inline-fields { display: flex; gap: 7px; }
+  .inline-fields label { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
+  .inline-fields input { width: 100%; text-align: right; }
+  .actions { display: flex; flex-wrap: wrap; gap: 7px; margin-bottom: 10px; }
   button {
     font: inherit; font-size: 13px; font-weight: 700; border-radius: 11px; padding: 8px 14px; cursor: pointer;
     color: var(--ink); border: 1px solid color-mix(in srgb, var(--accent) 22%, var(--line));
@@ -122,7 +140,11 @@
   td.remote { text-align: center; font-weight: 700; }
   td.remote.yes { color: #2f9e44; }
   td.remote.no { color: color-mix(in srgb, var(--muted) 55%, transparent); }
+  /* Numeric columns right-align header AND value, so a short number sits under a short (relabelled)
+     header with no wide empty gap between them. */
+  th.num { text-align: right; }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  th.num, td.num { padding-left: 6px; }
   td.reason { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
   /* Location trims like title/reason; the hover tooltip reveals the full value. */
   td.location { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
@@ -132,6 +154,21 @@
   .pager button { padding: 5px 12px; font-size: 12.5px; }
   .pager button:disabled { opacity: .45; cursor: default; transform: none; }
   .pager .tab { font-variant-numeric: tabular-nums; }
+
+  /* Run button + the Jobs progress panel. */
+  .run { width: 100%; margin-top: 2px; justify-content: center; font-size: 13.5px; }
+  .run:disabled { opacity: .7; cursor: default; transform: none; }
+  .runview { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; box-shadow: var(--shadow); padding: 16px 18px; margin-bottom: 12px; }
+  .run-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 15px; }
+  .run-head h2 { margin: 0; font-size: 15px; font-weight: 800; color: var(--ink); }
+  .run-note { font-size: 11.5px; color: var(--muted); font-weight: 600; }
+  .bars { display: flex; flex-direction: column; gap: 11px; }
+  .barrow { display: grid; grid-template-columns: 92px 1fr 104px; align-items: center; gap: 12px; font-size: 12.5px; }
+  .barlabel { color: var(--muted); font-weight: 700; }
+  .bar { height: 12px; border-radius: 999px; background: var(--panel-2); border: 1px solid var(--line); overflow: hidden; }
+  .bar-fill { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .bar-fill.rate { background: linear-gradient(90deg, #FFC000, #d0433b); }
+  .barnum { text-align: right; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 700; }
 
   /* Delayed full-text tooltip for any clipped cell. Inverted ink panel — reads in both themes. */
   .tip {
@@ -147,12 +184,12 @@
   <aside>
     <div class="side-head">
       <h1>Job Search — Profile</h1>
-      <span class="sub">Tune filters &amp; highlights, preview against cached results, save the profile for the CLI.</span>
+      <span class="sub">Tune &amp; preview your search profile.</span>
     </div>
     <div class="actions">
       <button class="primary" id="preview">Preview</button>
-      <button id="save">Save profile</button>
-      <button id="download">Download .xlsx</button>
+      <button id="save">Save</button>
+      <button id="download">Download</button>
     </div>
 
     <fieldset>
@@ -164,6 +201,7 @@
       <label class="row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000"></label>
       <label class="row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05"></label>
       <label class="row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
+      <label class="row"><span>Estimate missing pay</span><input type="checkbox" id="estimate_salary"></label>
     </fieldset>
 
     <fieldset>
@@ -175,23 +213,32 @@
 
     <fieldset>
       <legend>Recency (days)</legend>
-      <label class="row"><span>Fresh ≤</span><input type="number" id="fresh" min="0"></label>
-      <label class="row"><span>Recent ≤</span><input type="number" id="recent" min="0"></label>
-      <label class="row"><span>Aging ≤</span><input type="number" id="aging" min="0"></label>
+      <div class="inline-fields">
+        <label>Fresh ≤<input type="number" id="fresh" min="0"></label>
+        <label>Recent ≤<input type="number" id="recent" min="0"></label>
+        <label>Aging ≤<input type="number" id="aging" min="0"></label>
+      </div>
     </fieldset>
 
-    <fieldset>
-      <legend>Estimator</legend>
-      <label class="row"><span>Estimate pay when none posted</span><input type="checkbox" id="estimate_salary"></label>
-    </fieldset>
+    <button class="primary run" id="run">▶&nbsp;&nbsp;Run search · 10 jobs</button>
   </aside>
 
+  <button class="foldbar" id="toggle" aria-label="Show or hide filters" aria-expanded="true" title="Show/hide filters">
+    <span class="fold-label">Filters</span>
+    <span class="fold-chev">‹</span>
+  </button>
+
   <main>
-    <div class="mainbar">
-      <button class="toggle" id="toggle" aria-label="Show or hide filters" aria-expanded="true" title="Show/hide filters">☰</button>
-      <div class="status" id="status">Loading profile…</div>
-    </div>
-    <div class="tablewrap"><div class="empty" id="table">Press <b>Preview</b> to apply the profile to your cached results.</div></div>
+    <div class="status" id="status">Loading profile…</div>
+    <section class="runview" id="runview" hidden>
+      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-note">mock run · no Apify / Claude spend</span></div>
+      <div class="bars">
+        <div class="barrow"><span class="barlabel">Apify load</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 10</span></div>
+        <div class="barrow"><span class="barlabel">Post-process</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 10</span></div>
+        <div class="barrow"><span class="barlabel">Rate limit</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
+      </div>
+    </section>
+    <div class="tablewrap"><div class="empty" id="table">Press <b>Preview</b> to apply the profile to your cached results, or <b>Run</b> to fetch a fresh suite.</div></div>
     <div class="pager" id="pager"></div>
   </main>
 </div>
@@ -242,6 +289,13 @@ function esc(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').rep
 function isNumericCol(name) {
   return ['company_size', 'years_experience', 'salary_min', 'salary_max', 'salary_est_min', 'salary_est_max', 'score', 'applicants'].includes(name);
 }
+// Short header labels for the widest columns — trims the empty space between a long header and its
+// short value. Only the displayed <th> text changes; the real column names still drive the logic.
+const SHORT = {
+  company_size: 'size', years_experience: 'yrs', apply_type: 'apply',
+  salary_min: 'pay min', salary_max: 'pay max', salary_est_min: 'est min', salary_est_max: 'est max',
+};
+const label = c => SHORT[c] || c;
 function fmt(name, v) {
   if (v === '' || v == null) return '';
   if (name.startsWith('salary')) { const n = Number(v); return isNaN(n) ? esc(v) : '$' + n.toLocaleString(); }
@@ -304,7 +358,7 @@ function render() {
   }).join('');
 
   const legrow = columns.map(c => `<th class="legcell">${legendChips(c)}</th>`).join('');
-  const head = columns.map((c, i) => `<th data-col="${i}">${c}</th>`).join('');
+  const head = columns.map((c, i) => `<th data-col="${i}" class="${isNumericCol(c) ? 'num' : ''}">${label(c)}</th>`).join('');
   $('table').outerHTML = `<table id="table"><thead><tr class="legrow">${legrow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   document.querySelectorAll('#table thead tr:last-child th').forEach(th =>
     th.addEventListener('click', () => sortBy(Number(th.dataset.col))));
@@ -373,9 +427,62 @@ async function download() {
   } catch (e) { setStatus(e.message, true); }
 }
 
+// --- Run: fetch a fresh suite of jobs and watch its progress -----------------------------------
+let pollTimer = 0;
+function setBar(name, done, total) {
+  $('bar-' + name).style.width = (total ? Math.round(done / total * 100) : 0) + '%';
+  $('num-' + name).textContent = done + ' / ' + total;
+}
+function showRunview(on) {
+  $('runview').hidden = !on;
+  document.querySelector('.tablewrap').style.display = on ? 'none' : '';
+}
+function resetRun() { const b = $('run'); b.disabled = false; b.innerHTML = '▶&nbsp;&nbsp;Run search · 10 jobs'; }
+
+async function run() {
+  clearTimeout(pollTimer);
+  const b = $('run'); b.disabled = true; b.textContent = 'Running…';
+  $('pager').innerHTML = '';
+  setBar('apify', 0, 10); setBar('verify', 0, 10);
+  $('run-title').textContent = 'Starting…';
+  showRunview(true);
+  try {
+    const res = await fetch('/api/run', { method: 'POST', body: JSON.stringify(collect()) });
+    if (!res.ok) throw new Error(await res.text());
+    poll((await res.json()).id);
+  } catch (e) { setStatus(e.message, true); showRunview(false); resetRun(); }
+}
+
+async function poll(id) {
+  try {
+    const res = await fetch('/api/run?id=' + encodeURIComponent(id));
+    if (!res.ok) throw new Error(await res.text());
+    const j = await res.json();
+    setBar('apify', j.apify.done, j.apify.total);
+    setBar('verify', j.verify.done, j.verify.total);
+    $('bar-rate').style.width = Math.min(100, j.rate.used / j.rate.limit * 100) + '%';
+    $('num-rate').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
+    $('run-title').textContent =
+      j.phase === 'apify' ? 'Scraping via Apify…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Done';
+    if (j.status === 'done') {
+      last = { columns: j.columns, rows: j.rows, kept: j.rows.length, total: j.rows.length };
+      sortState = { col: -1, dir: 1 }; page = 0;
+      showRunview(false);
+      render();
+      $('status').innerHTML = `Run complete — <span class="count">${j.rows.length}</span> jobs loaded.`;
+      $('status').className = 'status';
+      resetRun();
+      return;
+    }
+    if (j.status === 'error') { setStatus(j.error || 'run failed', true); showRunview(false); resetRun(); return; }
+    pollTimer = setTimeout(() => poll(id), 350);
+  } catch (e) { setStatus(e.message, true); resetRun(); }
+}
+
 $('preview').addEventListener('click', preview);
 $('save').addEventListener('click', save);
 $('download').addEventListener('click', download);
+$('run').addEventListener('click', run);
 
 // Fold the sidebar to give the listings the full width. The toggle lives in main, so it is still
 // there to un-fold with.

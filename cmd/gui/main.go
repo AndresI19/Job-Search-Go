@@ -15,6 +15,9 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AndresI19/Job-Search-Go/internal/filter"
@@ -31,12 +34,13 @@ func main() {
 	cachePath := flag.String("cache", "results.cache.csv", "verified-result cache to preview against")
 	flag.Parse()
 
-	s := &server{profPath: *profPath, cachePath: *cachePath}
+	s := &server{profPath: *profPath, cachePath: *cachePath, jobs: map[string]*jobState{}}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.index)
 	mux.HandleFunc("/api/profile", s.profile)
 	mux.HandleFunc("/api/preview", s.preview)
 	mux.HandleFunc("/api/download", s.download)
+	mux.HandleFunc("/api/run", s.run)
 
 	fmt.Printf("job-search GUI: http://%s  (profile=%s, cache=%s)\n", *addr, *profPath, *cachePath)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -45,7 +49,127 @@ func main() {
 	}
 }
 
-type server struct{ profPath, cachePath string }
+type server struct {
+	profPath, cachePath string
+	jobsMu              sync.Mutex
+	jobs                map[string]*jobState
+	jobSeq              atomic.Int64
+}
+
+// jobState is one search run's live progress. The mock runner drives it; a real
+// Apify+Claude runner would drive the same fields, so the API and UI don't change.
+type jobState struct {
+	mu          sync.Mutex
+	id          string
+	status      string // running | done | error
+	phase       string // apify | verify | done
+	apifyDone   int
+	apifyTotal  int
+	verifyDone  int
+	verifyTotal int
+	rateUsed    float64 // Apify budget spent, USD
+	rateLimit   float64 // Apify budget cap, USD
+	errMsg      string
+	header      []string
+	rows        [][]string // the run's result rows, populated on completion
+	cfg         report.Config
+}
+
+// snapshot renders the job's progress as JSON-ready data. Once done it also
+// carries the coloured results, so the page loads them exactly like a preview.
+func (j *jobState) snapshot() map[string]any {
+	j.mu.Lock()
+	defer j.mu.Unlock()
+	m := map[string]any{
+		"id": j.id, "status": j.status, "phase": j.phase,
+		"apify":  map[string]int{"done": j.apifyDone, "total": j.apifyTotal},
+		"verify": map[string]int{"done": j.verifyDone, "total": j.verifyTotal},
+		"rate":   map[string]float64{"used": j.rateUsed, "limit": j.rateLimit},
+	}
+	if j.errMsg != "" {
+		m["error"] = j.errMsg
+	}
+	if j.status == "done" {
+		cols, table := report.Preview(j.header, j.rows, j.cfg, time.Now())
+		m["columns"], m["rows"] = cols, table
+	}
+	return m
+}
+
+// suiteSize is how many jobs one run processes — a small, bounded batch.
+const suiteSize = 10
+
+// run starts a search (POST) or reports a running one's progress (GET ?id=).
+func (s *server) run(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodPost:
+		p, err := decodeProfile(r)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		header, data, err := s.loadCache()
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		// The suite is the profile's filtered listings, capped at suiteSize.
+		rows := filter.Apply(header, data, p.Filters, p.EstimateSalary, time.Now())
+		if len(rows) > suiteSize {
+			rows = rows[:suiteSize]
+		}
+		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
+		j := &jobState{
+			id: id, status: "running", phase: "apify",
+			apifyTotal: len(rows), verifyTotal: len(rows),
+			rateUsed: 0.19, rateLimit: 5.00, // free-plan baseline
+			header: header, cfg: report.ConfigFrom(p),
+		}
+		s.jobsMu.Lock()
+		s.jobs[id] = j
+		s.jobsMu.Unlock()
+		go runMock(j, rows)
+		writeJSON(w, map[string]string{"id": id})
+	case http.MethodGet:
+		s.jobsMu.Lock()
+		j := s.jobs[r.URL.Query().Get("id")]
+		s.jobsMu.Unlock()
+		if j == nil {
+			http.Error(w, "no such job", http.StatusNotFound)
+			return
+		}
+		writeJSON(w, j.snapshot())
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// runMock simulates a run against a $0 mock: it replays the suite's cached rows
+// with realistic timing so the Apify-load and post-process bars animate, without
+// touching Apify or Claude. Swapping in the real pipeline means replacing this
+// body with ingest → verify calls that drive the same jobState fields.
+func runMock(j *jobState, rows [][]string) {
+	n := len(rows)
+	for i := 1; i <= n; i++ { // Apify scrape: item count climbs as it "scrapes".
+		time.Sleep(350 * time.Millisecond)
+		j.mu.Lock()
+		j.apifyDone = i
+		j.rateUsed += 0.002 // per-result cost, mocked
+		j.mu.Unlock()
+	}
+	j.mu.Lock()
+	j.phase = "verify"
+	j.mu.Unlock()
+	for i := 1; i <= n; i++ { // post-process: ATS + Claude verdict, per listing.
+		time.Sleep(300 * time.Millisecond)
+		j.mu.Lock()
+		j.verifyDone = i
+		j.mu.Unlock()
+	}
+	j.mu.Lock()
+	j.status, j.phase, j.rows = "done", "done", rows
+	j.mu.Unlock()
+}
 
 func (s *server) index(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Path != "/" {
