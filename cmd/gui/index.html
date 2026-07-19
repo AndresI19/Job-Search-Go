@@ -161,6 +161,9 @@
   td.reason { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
   /* Location trims like title/reason; the hover tooltip reveals the full value. */
   td.location { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  /* The per-row info icon replaces the apply/source/verified/coverage columns. */
+  td.info { text-align: center; color: var(--accent); cursor: help; font-weight: 800; width: 1%; user-select: none; }
+  th.infoh { width: 1%; }
   .empty { padding: 34px; text-align: center; color: var(--muted); }
 
   .pager { display: flex; align-items: center; gap: 12px; margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); }
@@ -187,8 +190,8 @@
   .tip {
     position: fixed; z-index: 50; display: none; max-width: 440px;
     background: var(--ink); color: var(--panel); padding: 6px 10px; border-radius: 8px;
-    font-size: 12px; line-height: 1.4; box-shadow: var(--shadow-lg);
-    white-space: normal; word-break: break-word; pointer-events: none;
+    font-size: 12px; line-height: 1.45; box-shadow: var(--shadow-lg);
+    white-space: pre-line; word-break: break-word; pointer-events: none;
   }
 </style>
 </head>
@@ -361,7 +364,8 @@ function render() {
   // tooltip systems on one cell fight.
   const idxTitle = columns.indexOf('title');
   const body = pageRows.map(r => {
-    const tds = r.cells.map((cell, i) => {
+    const info = r.info ? `<td class="info" data-info="${esc(r.info)}">ⓘ</td>` : '<td class="info"></td>';
+    const tds = info + r.cells.map((cell, i) => {
       const name = columns[i];
       const bg = cell.fill ? ` style="background:#${cell.fill}"` : '';
       let val = fmt(name, cell.value), cls = '';
@@ -384,10 +388,10 @@ function render() {
     return `<tr>${tds}</tr>`;
   }).join('');
 
-  const legrow = columns.map(c => `<th class="legcell">${legendChips(c)}</th>`).join('');
-  const head = columns.map((c, i) => `<th data-col="${i}" class="${isNumericCol(c) ? 'num' : ''}">${label(c)}</th>`).join('');
+  const legrow = '<th></th>' + columns.map(c => `<th class="legcell">${legendChips(c)}</th>`).join('');
+  const head = '<th class="infoh"></th>' + columns.map((c, i) => `<th data-col="${i}" class="${isNumericCol(c) ? 'num' : ''}">${label(c)}</th>`).join('');
   $('table').outerHTML = `<table id="table"><thead><tr class="legrow">${legrow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
-  document.querySelectorAll('#table thead tr:last-child th').forEach(th =>
+  document.querySelectorAll('#table thead tr:last-child th[data-col]').forEach(th =>
     th.addEventListener('click', () => sortBy(Number(th.dataset.col))));
 
   renderPager(rows.length, pages, start);
@@ -470,11 +474,14 @@ async function poll(id) {
       j.phase === 'apify' ? 'Scraping via Apify…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Done';
     $('run-note').textContent = j.spends ? 'LIVE · spends Apify + Claude' : 'mock · $0 (no Apify / Claude)';
     if (j.status === 'done') {
-      last = { columns: j.columns, rows: j.rows, kept: j.rows.length, total: j.rows.length };
+      const rows = j.rows || [];
+      last = { columns: j.columns || [], rows: rows, kept: rows.length, total: rows.length };
       sortState = { col: -1, dir: 1 }; page = 0;
       showRunview(false);
       render();
-      $('status').innerHTML = `Run complete — <span class="count">${j.rows.length}</span> jobs loaded.`;
+      $('status').innerHTML = rows.length
+        ? `Run complete — <span class="count">${rows.length}</span> jobs loaded.`
+        : `Run complete — <span class="count">0</span> jobs matched your filters (try loosening them).`;
       $('status').className = 'status';
       resetRun();
       return;
@@ -517,10 +524,10 @@ $('toggle').addEventListener('click', () => {
   $('toggle').setAttribute('aria-expanded', String(!collapsed));
 });
 
-// Hover a CLIPPED cell for one second to read its full value. Delegated on .tablewrap, which persists
-// across table re-renders (render() replaces only #table, its child). The dwell timer restarts ONLY
-// when the pointer crosses into a DIFFERENT cell — a true one-second hover, not something a micro-
-// movement inside the same cell keeps resetting. Non-clipped cells reveal nothing, so they get none.
+// Delayed tooltip: the ⓘ info icon shows the folded apply/source/verified/coverage detail; any other
+// CLIPPED cell shows its full value. Delegated on .tablewrap (persists across table re-renders). The
+// dwell timer restarts ONLY when the pointer crosses into a DIFFERENT cell, so a micro-movement inside
+// one cell doesn't keep resetting it. Dwell is 800ms — 20% faster than the previous 1s.
 (function tooltips() {
   const tip = document.createElement('div');
   tip.className = 'tip';
@@ -533,8 +540,9 @@ $('toggle').addEventListener('click', () => {
     if (td === cur) return;
     cur = td;
     hide();
-    if (!td || td.scrollWidth <= td.clientWidth + 1) return;
-    const text = td.textContent.trim();
+    let text = null;
+    if (td && td.classList.contains('info')) text = td.dataset.info || null;           // the info icon
+    else if (td && td.scrollWidth > td.clientWidth + 1) text = td.textContent.trim() || null; // clipped cell
     if (!text) return;
     timer = setTimeout(() => {
       tip.textContent = text;
@@ -545,7 +553,7 @@ $('toggle').addEventListener('click', () => {
       const y = below + tip.offsetHeight > window.innerHeight ? r.top - tip.offsetHeight - 6 : below;
       tip.style.left = x + 'px';
       tip.style.top = Math.max(8, y) + 'px';
-    }, 1000);
+    }, 800);
   });
   wrap.addEventListener('mouseleave', () => { cur = null; hide(); });
 })();

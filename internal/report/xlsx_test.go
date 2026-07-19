@@ -93,6 +93,17 @@ func TestRecencyFill(t *testing.T) {
 	}
 }
 
+func TestPreviewZeroRowsNonNil(t *testing.T) {
+	// A 0-result run must serialize as [] not null, or the UI crashes reading .length.
+	cols, table := Preview([]string{"title", "score"}, nil, cfg, time.Now())
+	if cols == nil || table == nil {
+		t.Fatalf("Preview must return non-nil slices for 0 rows: cols=%v table=%v", cols, table)
+	}
+	if len(table) != 0 {
+		t.Errorf("table len = %d, want 0", len(table))
+	}
+}
+
 func TestRecencyIsDistinctFromSalaryGreens(t *testing.T) {
 	for _, r := range []string{fillFresh, fillRecent, fillAging, fillStale} {
 		for _, s := range []string{fillSalary, fillSalaryHi} {
