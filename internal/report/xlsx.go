@@ -263,11 +263,40 @@ type PCell struct {
 	Fill  string `json:"fill"`
 }
 
-// PRow is one preview row: the posting URL (for the title link) and its cells,
-// aligned to the visible columns.
+// PRow is one preview row: the posting URL (for the title link), its cells
+// aligned to the visible columns, and Info — the folded-away detail fields
+// (apply/source/verified/coverage) shown behind a per-row info icon.
 type PRow struct {
 	URL   string  `json:"url"`
 	Cells []PCell `json:"cells"`
+	Info  string  `json:"info"`
+}
+
+// infoCols are folded out of the GUI table and surfaced in the row's info tooltip
+// instead. (WriteXLSX is unaffected — the spreadsheet keeps every column.)
+var infoCols = map[string]bool{"apply_type": true, "source": true, "verified_via": true, "coverage": true}
+
+// rowInfo formats the folded detail fields for the info tooltip, one per line,
+// skipping any that are empty.
+func rowInfo(row []string, ai, si, vi, ci int) string {
+	var b strings.Builder
+	add := func(label string, idx int) {
+		v := strOf(row, idx)
+		if v == "" {
+			return
+		}
+		if b.Len() > 0 {
+			b.WriteByte('\n')
+		}
+		b.WriteString(label)
+		b.WriteString(": ")
+		b.WriteString(v)
+	}
+	add("Apply", ai)
+	add("Source", si)
+	add("Verified via", vi)
+	add("Coverage", ci)
+	return b.String()
 }
 
 // gradPalette maps a numeric column to the [low, high] hex endpoints its cells
@@ -300,15 +329,21 @@ func Preview(header []string, rows [][]string, cfg Config, now time.Time) (colum
 		}
 	}
 
+	ai, si, vi, ci := colIndex(header, "apply_type"), colIndex(header, "source"),
+		colIndex(header, "verified_via"), colIndex(header, "coverage")
+
+	columns, table = []string{}, []PRow{} // never nil — a 0-result run must serialize as [], not null
 	var vis []int
 	for c, h := range header {
-		if !cfg.skip(h) {
-			vis = append(vis, c)
-			columns = append(columns, h)
+		// Fold the shared-skip columns AND the info columns (moved to the row's info tooltip).
+		if cfg.skip(h) || infoCols[strings.ToLower(h)] {
+			continue
 		}
+		vis = append(vis, c)
+		columns = append(columns, h)
 	}
 	for _, row := range rows {
-		pr := PRow{URL: trimURL(strOf(row, cl.url)), Cells: make([]PCell, 0, len(vis))}
+		pr := PRow{URL: trimURL(strOf(row, cl.url)), Info: rowInfo(row, ai, si, vi, ci), Cells: make([]PCell, 0, len(vis))}
 		for _, c := range vis {
 			fill := cfg.fillFor(c, row, cl, now)
 			if gs, ok := grad[c]; ok {
