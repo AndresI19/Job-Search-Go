@@ -145,6 +145,8 @@
   /* per-column legend row: sits above the header on the panel; not sticky, so the header pins over it */
   tr.legrow th { position: static; background: var(--panel); color: var(--muted); border-bottom: none; padding: 6px 10px 3px; cursor: default; font-weight: 700; }
   .chip { display: inline-flex; align-items: center; gap: 4px; margin-right: 9px; font-size: 10.5px; white-space: nowrap; letter-spacing: .2px; }
+  .chips2 { display: inline-flex; flex-wrap: wrap; max-width: 82px; gap: 2px 6px; }
+  .chips2 .chip { margin-right: 0; }
   .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.18); flex: none; }
 
   td a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
@@ -340,7 +342,8 @@ function legendChips(col) {
   const k = v => '$' + Math.round(v / 1000) + 'k';
   if (col === 'company') return chip('FFE699', 'F500') + chip('9BC2E6', 'Software') + chip('D9C2E9', 'Startup');
   if (col === 'salary_min') return chip('E2EFDA', '≥' + k(n('salary_light'))) + chip('A9D08E', '≥' + k(n('salary_strong')));
-  if (col === 'posted') return chip('92D050', '≤' + n('fresh') + 'd') + chip('FFEB9C', '≤' + n('recent') + 'd') + chip('FFC000', '≤' + n('aging') + 'd') + chip('FF9999', '>' + n('aging') + 'd');
+  // Wrapped 2×2 so the recency legend doesn't stretch the narrow posted column.
+  if (col === 'posted') return `<span class="chips2">${chip('92D050', '≤' + n('fresh') + 'd')}${chip('FFEB9C', '≤' + n('recent') + 'd')}${chip('FFC000', '≤' + n('aging') + 'd')}${chip('FF9999', '>' + n('aging') + 'd')}</span>`;
   return '';
 }
 
