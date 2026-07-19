@@ -38,15 +38,11 @@
       var(--bg);
     background-attachment: fixed;
   }
-  header { padding: 18px 22px 12px; display: flex; align-items: baseline; gap: 14px; flex-wrap: wrap; }
-  header h1 {
-    font-size: 23px; margin: 0; font-weight: 820; letter-spacing: -.5px;
-    background: linear-gradient(96deg, var(--accent), var(--accent2));
-    -webkit-background-clip: text; background-clip: text; color: transparent;
-  }
-  header .sub { color: var(--muted); font-size: 13px; font-weight: 500; }
-  .layout { display: grid; grid-template-columns: 296px 1fr; gap: 18px; padding: 0 18px 26px; align-items: start; }
-  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+  .layout { display: grid; grid-template-columns: 296px 1fr; gap: 18px; padding: 14px 18px 26px; align-items: start; }
+  /* Folded: the sidebar leaves the flow so the table owns the full width. */
+  .layout.collapsed { grid-template-columns: 1fr; }
+  .layout.collapsed > aside { display: none; }
+  @media (max-width: 820px) { .layout:not(.collapsed) { grid-template-columns: 1fr; } }
 
   /* The form is a panel card with the platform's left accent rail. */
   aside {
@@ -56,7 +52,20 @@
     border-left: 3px solid var(--accent); box-shadow: var(--shadow);
     position: sticky; top: 14px; max-height: calc(100vh - 28px); overflow-y: auto;
   }
+  /* The profile title, moved off the top bar into the sidebar card — the table reclaims that band. */
+  .side-head { margin: 0 0 13px; }
+  .side-head h1 {
+    font-size: 18px; margin: 0 0 3px; font-weight: 820; letter-spacing: -.4px;
+    background: linear-gradient(96deg, var(--accent), var(--accent2));
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .side-head .sub { display: block; color: var(--muted); font-size: 12px; font-weight: 500; line-height: 1.4; }
   main { min-width: 0; }
+  /* Toggle + status share the row above the table. The toggle lives in main, NOT the sidebar, so it
+     survives the fold — a control that hides itself can't bring itself back. */
+  .mainbar { display: flex; align-items: center; gap: 12px; margin-bottom: 10px; }
+  .toggle { padding: 7px 12px; font-size: 15px; line-height: 1; flex: none; }
+  .mainbar .status { margin: 0; }
   fieldset { border: 1px solid var(--line); border-radius: 12px; padding: 11px 13px; margin: 0 0 12px; background: var(--panel); }
   legend { font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: .5px; color: var(--muted); padding: 0 6px; }
   label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 7px 0; }
@@ -115,17 +124,31 @@
   td.remote.no { color: color-mix(in srgb, var(--muted) 55%, transparent); }
   td.num { text-align: right; font-variant-numeric: tabular-nums; }
   td.reason { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  /* Location trims like title/reason; the hover tooltip reveals the full value. */
+  td.location { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
   .empty { padding: 34px; text-align: center; color: var(--muted); }
+
+  .pager { display: flex; align-items: center; gap: 12px; margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); }
+  .pager button { padding: 5px 12px; font-size: 12.5px; }
+  .pager button:disabled { opacity: .45; cursor: default; transform: none; }
+  .pager .tab { font-variant-numeric: tabular-nums; }
+
+  /* Delayed full-text tooltip for any clipped cell. Inverted ink panel — reads in both themes. */
+  .tip {
+    position: fixed; z-index: 50; display: none; max-width: 440px;
+    background: var(--ink); color: var(--panel); padding: 6px 10px; border-radius: 8px;
+    font-size: 12px; line-height: 1.4; box-shadow: var(--shadow-lg);
+    white-space: normal; word-break: break-word; pointer-events: none;
+  }
 </style>
 </head>
 <body>
-<header>
-  <h1>Job Search — Profile</h1>
-  <span class="sub">Tune filters &amp; highlights, preview against cached results, save the profile for the CLI.</span>
-</header>
-
-<div class="layout">
+<div class="layout" id="layout">
   <aside>
+    <div class="side-head">
+      <h1>Job Search — Profile</h1>
+      <span class="sub">Tune filters &amp; highlights, preview against cached results, save the profile for the CLI.</span>
+    </div>
     <div class="actions">
       <button class="primary" id="preview">Preview</button>
       <button id="save">Save profile</button>
@@ -164,8 +187,12 @@
   </aside>
 
   <main>
-    <div class="status" id="status">Loading profile…</div>
+    <div class="mainbar">
+      <button class="toggle" id="toggle" aria-label="Show or hide filters" aria-expanded="true" title="Show/hide filters">☰</button>
+      <div class="status" id="status">Loading profile…</div>
+    </div>
     <div class="tablewrap"><div class="empty" id="table">Press <b>Preview</b> to apply the profile to your cached results.</div></div>
+    <div class="pager" id="pager"></div>
   </main>
 </div>
 
@@ -173,6 +200,8 @@
 const $ = id => document.getElementById(id);
 let sortState = { col: -1, dir: 1 };
 let last = null;
+let page = 0;
+const PAGE_SIZE = 40;
 
 function populate(p) {
   $('locations').value = (p.filters.locations || []).join(', ');
@@ -234,27 +263,42 @@ function legendChips(col) {
 function render() {
   if (!last) return;
   const { columns, rows } = last;
-  if (!rows.length) { $('table').outerHTML = '<div class="empty" id="table">No listings match this profile.</div>'; return; }
+  if (!rows.length) {
+    $('table').outerHTML = '<div class="empty" id="table">No listings match this profile.</div>';
+    $('pager').innerHTML = '';
+    return;
+  }
 
+  // Paginate: 40 to a page. Clamp so a shrunk result set (after a sort/re-filter) can't strand us on
+  // a page that no longer exists.
+  const pages = Math.ceil(rows.length / PAGE_SIZE);
+  page = Math.max(0, Math.min(page, pages - 1));
+  const start = page * PAGE_SIZE;
+  const pageRows = rows.slice(start, start + PAGE_SIZE);
+
+  // No native title= attributes: the delayed tooltip (below) covers every clipped cell, and two
+  // tooltip systems on one cell fight.
   const idxTitle = columns.indexOf('title');
-  const body = rows.map(r => {
+  const body = pageRows.map(r => {
     const tds = r.cells.map((cell, i) => {
       const name = columns[i];
       const bg = cell.fill ? ` style="background:#${cell.fill}"` : '';
-      let val = fmt(name, cell.value), cls = '', attr = '';
+      let val = fmt(name, cell.value), cls = '';
       if (i === idxTitle) {
-        cls = 'title'; attr = ` title="${esc(cell.value)}"`;
+        cls = 'title';
         if (r.url) val = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${val}</a>`;
       } else if (name === 'remote') {
         const yes = cell.value === 'true';
         val = yes ? '✓' : (cell.value === 'false' ? '✗' : '');
         cls = 'remote ' + (yes ? 'yes' : 'no');
+      } else if (name === 'location') {
+        cls = 'location';
       } else if (name === 'reasoning') {
-        cls = 'reason'; attr = ` title="${esc(cell.value)}"`;
+        cls = 'reason';
       } else if (isNumericCol(name)) {
         cls = 'num';
       }
-      return `<td class="${cls}"${attr}${bg}>${val}</td>`;
+      return `<td class="${cls}"${bg}>${val}</td>`;
     }).join('');
     return `<tr>${tds}</tr>`;
   }).join('');
@@ -264,11 +308,25 @@ function render() {
   $('table').outerHTML = `<table id="table"><thead><tr class="legrow">${legrow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   document.querySelectorAll('#table thead tr:last-child th').forEach(th =>
     th.addEventListener('click', () => sortBy(Number(th.dataset.col))));
+
+  renderPager(rows.length, pages, start);
+}
+
+function renderPager(total, pages, start) {
+  const end = Math.min(start + PAGE_SIZE, total);
+  if (pages <= 1) { $('pager').innerHTML = `<span>${total} listing${total === 1 ? '' : 's'}</span>`; return; }
+  $('pager').innerHTML =
+    `<button ${page === 0 ? 'disabled' : ''} data-d="-1">‹ Prev</button>` +
+    `<span class="tab">${start + 1}–${end} of ${total}  ·  page ${page + 1} of ${pages}</span>` +
+    `<button ${page >= pages - 1 ? 'disabled' : ''} data-d="1">Next ›</button>`;
+  $('pager').querySelectorAll('button[data-d]').forEach(b =>
+    b.addEventListener('click', () => { page += Number(b.dataset.d); render(); document.querySelector('.tablewrap').scrollTop = 0; }));
 }
 
 function sortBy(col) {
   sortState.dir = sortState.col === col ? -sortState.dir : 1;
   sortState.col = col;
+  page = 0; // a re-sort re-orders the whole set — start from the top of it
   const num = isNumericCol(last.columns[col]);
   last.rows.sort((a, b) => {
     let x = a.cells[col].value, y = b.cells[col].value;
@@ -285,6 +343,7 @@ async function preview() {
     if (!res.ok) throw new Error(await res.text());
     last = await res.json();
     sortState = { col: -1, dir: 1 };
+    page = 0;
     render();
     $('status').innerHTML = `<span class="count">${last.kept}</span> of ${last.total} verified listings match.`;
     $('status').className = 'status';
@@ -317,6 +376,46 @@ async function download() {
 $('preview').addEventListener('click', preview);
 $('save').addEventListener('click', save);
 $('download').addEventListener('click', download);
+
+// Fold the sidebar to give the listings the full width. The toggle lives in main, so it is still
+// there to un-fold with.
+$('toggle').addEventListener('click', () => {
+  const collapsed = $('layout').classList.toggle('collapsed');
+  $('toggle').setAttribute('aria-expanded', String(!collapsed));
+});
+
+// Hover a CLIPPED cell for one second to read its full value. Delegated on .tablewrap, which persists
+// across table re-renders (render() replaces only #table, its child). The dwell timer restarts ONLY
+// when the pointer crosses into a DIFFERENT cell — a true one-second hover, not something a micro-
+// movement inside the same cell keeps resetting. Non-clipped cells reveal nothing, so they get none.
+(function tooltips() {
+  const tip = document.createElement('div');
+  tip.className = 'tip';
+  document.body.appendChild(tip);
+  const wrap = document.querySelector('.tablewrap');
+  let timer = 0, cur = null;
+  const hide = () => { clearTimeout(timer); tip.style.display = 'none'; };
+  wrap.addEventListener('mouseover', e => {
+    const td = e.target.closest('td');
+    if (td === cur) return;
+    cur = td;
+    hide();
+    if (!td || td.scrollWidth <= td.clientWidth + 1) return;
+    const text = td.textContent.trim();
+    if (!text) return;
+    timer = setTimeout(() => {
+      tip.textContent = text;
+      tip.style.display = 'block';
+      const r = td.getBoundingClientRect();
+      const x = Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8));
+      const below = r.bottom + 6;
+      const y = below + tip.offsetHeight > window.innerHeight ? r.top - tip.offsetHeight - 6 : below;
+      tip.style.left = x + 'px';
+      tip.style.top = Math.max(8, y) + 'px';
+    }, 1000);
+  });
+  wrap.addEventListener('mouseleave', () => { cur = null; hide(); });
+})();
 
 fetch('/api/profile').then(r => r.json()).then(p => {
   populate(p);
