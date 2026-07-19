@@ -136,6 +136,8 @@
   .status { min-height: 20px; color: var(--muted); font-size: 13px; margin-bottom: 12px; }
   .status.err { color: #d0433b; }
   .count { font-weight: 800; color: var(--ink); }
+  .resbar { display: flex; gap: 8px; margin-bottom: 8px; }
+  .rbtn { font-size: 12px; padding: 5px 12px; }
 
   /* The results table is a panel card, matching the aside. */
   .tablewrap {
@@ -277,6 +279,11 @@
         <div class="barrow"><span class="barlabel">Rate limit</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
       </div>
     </section>
+    <div class="resbar">
+      <button class="rbtn" id="export" title="Download the current results as a CSV">⭳&nbsp; Export</button>
+      <button class="rbtn" id="import-btn" title="Load a previously exported results CSV">⭱&nbsp; Import</button>
+      <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+    </div>
     <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>
     <div class="pager" id="pager"></div>
   </main>
@@ -512,6 +519,36 @@ async function poll(id) {
 }
 
 $('run').addEventListener('click', run);
+
+// Export the current results as CSV; import a previously-exported one back.
+$('export').addEventListener('click', async () => {
+  setStatus('Exporting…');
+  try {
+    const res = await fetch('/api/export');
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'job-search-results.csv'; a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus('Exported job-search-results.csv');
+  } catch (e) { setStatus(e.message, true); }
+});
+$('import-btn').addEventListener('click', () => $('import-file').click());
+$('import-file').addEventListener('change', async e => {
+  const f = e.target.files[0];
+  if (!f) return;
+  setStatus('Importing ' + f.name + '…');
+  try {
+    const res = await fetch('/api/import', { method: 'POST', body: await f.text() });
+    if (!res.ok) throw new Error(await res.text());
+    last = await res.json();
+    sortState = { col: -1, dir: 1 }; page = 0;
+    render();
+    $('status').innerHTML = `Imported <span class="count">${last.rows.length}</span> results from ${esc(f.name)}.`;
+    $('status').className = 'status';
+  } catch (err) { setStatus(err.message, true); }
+  e.target.value = ''; // let the same file be re-imported
+});
 
 // Corner profile switch — Guest runs the $0 mock, Admin runs the real pipeline.
 function applyMode() {

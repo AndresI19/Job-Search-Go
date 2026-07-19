@@ -8,12 +8,14 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	_ "embed"
 	"encoding/csv"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"strconv"
@@ -66,6 +68,8 @@ func main() {
 	mux.HandleFunc("/api/preview", s.preview)
 	mux.HandleFunc("/api/download", s.download)
 	mux.HandleFunc("/api/run", s.run)
+	mux.HandleFunc("/api/export", s.export)
+	mux.HandleFunc("/api/import", s.importResults)
 
 	fmt.Printf("job-search GUI: http://%s  (cache=%s, %s)\n", *addr, *cachePath, s.modeLine())
 	if err := http.ListenAndServe(*addr, mux); err != nil {
@@ -147,6 +151,60 @@ type server struct {
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
 	jobSeq atomic.Int64
+
+	// lastRows is the most recent result set (preview or run), kept so it can be
+	// exported to a portable CSV and re-imported later.
+	lastMu     sync.Mutex
+	lastHeader []string
+	lastRows   [][]string
+}
+
+// setLast records the current result set for a later export.
+func (s *server) setLast(header []string, rows [][]string) {
+	s.lastMu.Lock()
+	s.lastHeader, s.lastRows = header, rows
+	s.lastMu.Unlock()
+}
+
+// export writes the last result set as a CSV download — the full verified rows,
+// so an exported file re-imports (and could be fed to the CLI) without loss.
+func (s *server) export(w http.ResponseWriter, r *http.Request) {
+	s.lastMu.Lock()
+	rows := s.lastRows
+	s.lastMu.Unlock()
+	if len(rows) == 0 {
+		http.Error(w, "no results to export yet — preview or run first", http.StatusBadRequest)
+		return
+	}
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Content-Disposition", `attachment; filename="job-search-results.csv"`)
+	if err := output.WriteRows(w, rows); err != nil {
+		httpErr(w, err)
+	}
+}
+
+// importResults reads a previously-exported results CSV (raw body), makes it the
+// current set, and returns it through the same preview pipeline so it renders
+// exactly like a fresh result.
+func (s *server) importResults(w http.ResponseWriter, r *http.Request) {
+	body, err := io.ReadAll(io.LimitReader(r.Body, 20<<20))
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	recs, err := csv.NewReader(bytes.NewReader(body)).ReadAll()
+	if err != nil {
+		httpErr(w, fmt.Errorf("not a valid results CSV: %w", err))
+		return
+	}
+	if len(recs) < 1 {
+		httpErr(w, fmt.Errorf("the file has no header row"))
+		return
+	}
+	header, rows := recs[0], recs[1:]
+	s.setLast(header, rows)
+	cols, table := report.Preview(header, rows, report.ConfigFrom(profile.Default()), time.Now())
+	writeJSON(w, map[string]any{"columns": cols, "rows": table, "kept": len(rows), "total": len(rows)})
 }
 
 // jobState is one search run's live progress. The mock runner drives it; a real
@@ -303,7 +361,7 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			s.jobsMu.Lock()
 			s.jobs[id] = j
 			s.jobsMu.Unlock()
-			go runMock(j, rows)
+			go s.runMock(j, rows)
 		}
 		writeJSON(w, map[string]string{"id": id})
 	case http.MethodGet:
@@ -324,7 +382,7 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 // with realistic timing so the Apify-load and post-process bars animate, without
 // touching Apify or Claude. Swapping in the real pipeline means replacing this
 // body with ingest → verify calls that drive the same jobState fields.
-func runMock(j *jobState, rows [][]string) {
+func (s *server) runMock(j *jobState, rows [][]string) {
 	n := len(rows)
 	// Pace each phase to roughly a few seconds regardless of n, so a large suite
 	// still animates rather than crawling.
@@ -356,6 +414,7 @@ func runMock(j *jobState, rows [][]string) {
 	j.mu.Lock()
 	j.status, j.phase, j.rows = "done", "done", rows
 	j.mu.Unlock()
+	s.setLast(j.header, rows)
 }
 
 // runReal drives the actual pipeline, updating the same jobState the mock does:
@@ -438,6 +497,7 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 	}
 	j.status, j.phase = "done", "done"
 	j.mu.Unlock()
+	s.setLast(j.header, rows)
 }
 
 func (s *server) index(w http.ResponseWriter, r *http.Request) {
@@ -492,6 +552,7 @@ func (s *server) preview(w http.ResponseWriter, r *http.Request) {
 	}
 	now := time.Now()
 	kept := filter.Apply(header, data, p.Filters, p.EstimateSalary, now)
+	s.setLast(header, kept)
 	cols, table := report.Preview(header, kept, report.ConfigFrom(p), now)
 	writeJSON(w, map[string]any{"columns": cols, "rows": table, "kept": len(kept), "total": len(data)})
 }
