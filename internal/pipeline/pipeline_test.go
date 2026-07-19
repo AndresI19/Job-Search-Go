@@ -43,7 +43,7 @@ func TestVerifyRanksAndCombines(t *testing.T) {
 		{Title: "Data Scientist", Company: "Unknownco"},     // no board -> claude only (0.80)
 		{Title: "Senior Backend Engineer", Company: "Acme"}, // ATS match + claude (0.86)
 	}
-	got := Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 4, nil)
+	got := Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 4, nil, nil)
 
 	if len(got) != 2 {
 		t.Fatalf("got %d results, want 2", len(got))
@@ -69,7 +69,7 @@ func TestVerifyDegradesWhenBothArmsFail(t *testing.T) {
 
 	got := Verify(context.Background(), []model.Listing{
 		{Title: "Engineer", Company: "ERR"}, // no board, and the judge errors
-	}, resolver, jd, score.DefaultWeights(), 2, nil)
+	}, resolver, jd, score.DefaultWeights(), 2, nil, nil)
 
 	if len(got) != 1 {
 		t.Fatalf("got %d results, want 1", len(got))

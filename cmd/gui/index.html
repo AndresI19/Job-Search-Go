@@ -187,6 +187,8 @@
 
       <fieldset>
         <legend>Filters</legend>
+        <label class="field-full"><span>Search keywords</span>
+          <input type="text" id="keywords" placeholder="Software Engineer"></label>
         <label class="row"><span>Job count <small>(max 10k)</small></span><input type="number" id="job_count" min="1" max="10000" value="10"></label>
         <label class="field-full"><span>Locations (comma-separated)</span>
           <input type="text" id="locations" placeholder="Boston, New York, Los Angeles"></label>
@@ -226,7 +228,7 @@
   <main>
     <div class="status" id="status">Loading profile…</div>
     <section class="runview" id="runview" hidden>
-      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-note">mock run · no Apify / Claude spend</span></div>
+      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-note" id="run-note">mock · $0</span></div>
       <div class="bars">
         <div class="barrow"><span class="barlabel">Apify load</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 10</span></div>
         <div class="barrow"><span class="barlabel">Post-process</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 10</span></div>
@@ -276,6 +278,7 @@ function collect() {
     },
     estimate_salary: c('estimate_salary'),
     job_count: n('job_count'),
+    keywords: $('keywords').value.trim(),
   };
 }
 
@@ -437,6 +440,7 @@ async function poll(id) {
     $('num-rate').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
     $('run-title').textContent =
       j.phase === 'apify' ? 'Scraping via Apify…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Done';
+    $('run-note').textContent = j.spends ? 'LIVE · spends Apify + Claude' : 'mock · $0 (no Apify / Claude)';
     if (j.status === 'done') {
       last = { columns: j.columns, rows: j.rows, kept: j.rows.length, total: j.rows.length };
       sortState = { col: -1, dir: 1 }; page = 0;

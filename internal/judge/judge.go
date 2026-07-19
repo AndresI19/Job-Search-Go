@@ -136,8 +136,11 @@ func FromEnv() (Judge, error) {
 	case "api":
 		inner, err = NewAPIJudge(modelID)
 		defaultLim = 16
+	case "mock":
+		inner = MockJudge{} // $0, no Claude — for proving the pipeline end to end
+		defaultLim = 16
 	default:
-		return nil, fmt.Errorf("unknown JUDGE_BACKEND %q (want \"cli\" or \"api\")", backend)
+		return nil, fmt.Errorf("unknown JUDGE_BACKEND %q (want \"cli\", \"api\", or \"mock\")", backend)
 	}
 	if err != nil {
 		return nil, err

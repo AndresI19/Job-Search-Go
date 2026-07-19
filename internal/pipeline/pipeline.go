@@ -20,8 +20,10 @@ import (
 
 // Verify runs every listing through ATS → Claude → combine and returns the
 // scored Results sorted best-first (highest legitimacy score). workers bounds how
-// many listings are in flight at once; a value below 1 is treated as 1.
-func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights, workers int, log *slog.Logger) []model.Result {
+// many listings are in flight at once; a value below 1 is treated as 1. onDone,
+// if non-nil, is called once per listing as it finishes (from many goroutines, so
+// it must be safe to call concurrently) — a progress hook for a live UI.
+func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolver, jd judge.Judge, w score.Weights, workers int, log *slog.Logger, onDone func()) []model.Result {
 	if workers < 1 {
 		workers = 1
 	}
@@ -38,6 +40,9 @@ func Verify(ctx context.Context, listings []model.Listing, resolver *ats.Resolve
 			defer wg.Done()
 			defer func() { <-sem }()
 			results[i] = verifyOne(ctx, l, resolver, jd, w, log) // each goroutine owns results[i]; no lock needed
+			if onDone != nil {
+				onDone()
+			}
 		}(i, l)
 	}
 	wg.Wait()

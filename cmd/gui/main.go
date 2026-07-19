@@ -8,6 +8,7 @@
 package main
 
 import (
+	"context"
 	_ "embed"
 	"encoding/csv"
 	"encoding/json"
@@ -20,21 +21,50 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/AndresI19/Job-Search-Go/internal/apify"
+	"github.com/AndresI19/Job-Search-Go/internal/ats"
 	"github.com/AndresI19/Job-Search-Go/internal/filter"
+	"github.com/AndresI19/Job-Search-Go/internal/greenhouse"
+	"github.com/AndresI19/Job-Search-Go/internal/judge"
+	"github.com/AndresI19/Job-Search-Go/internal/lever"
+	"github.com/AndresI19/Job-Search-Go/internal/linkedin"
+	"github.com/AndresI19/Job-Search-Go/internal/output"
+	"github.com/AndresI19/Job-Search-Go/internal/pipeline"
 	"github.com/AndresI19/Job-Search-Go/internal/profile"
 	"github.com/AndresI19/Job-Search-Go/internal/report"
+	"github.com/AndresI19/Job-Search-Go/internal/score"
+	"github.com/AndresI19/Job-Search-Go/internal/watchlist"
 )
 
 //go:embed index.html
 var indexHTML []byte
 
+// defaultLinkedInActor is the public LinkedIn scraper Actor used when
+// APIFY_ACTOR_ID is unset (matches the CLI).
+const defaultLinkedInActor = "hKByXkMQaC5Qt9UMN"
+
 func main() {
 	addr := flag.String("addr", "localhost:8080", "listen address")
 	profPath := flag.String("profile", "profile.yaml", "profile YAML to load and save")
 	cachePath := flag.String("cache", "results.cache.csv", "verified-result cache to preview against")
+	live := flag.Bool("live", false, "Run does a REAL Apify scrape + Claude verify (spends); default is the $0 mock")
 	flag.Parse()
 
 	s := &server{profPath: *profPath, cachePath: *cachePath, jobs: map[string]*jobState{}}
+	mode := "mock ($0)"
+	if *live {
+		if err := s.enableLive(); err != nil {
+			fmt.Fprintln(os.Stderr, "error: --live:", err)
+			os.Exit(1)
+		}
+		mode = "LIVE — real Apify + Claude (spends)"
+		s.spends = true
+		if os.Getenv("APIFY_BASE_URL") != "" || os.Getenv("JUDGE_BACKEND") == "mock" {
+			mode = "LIVE via mocks (APIFY_BASE_URL / JUDGE_BACKEND=mock — $0)"
+			s.spends = false
+		}
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.index)
 	mux.HandleFunc("/api/profile", s.profile)
@@ -42,18 +72,57 @@ func main() {
 	mux.HandleFunc("/api/download", s.download)
 	mux.HandleFunc("/api/run", s.run)
 
-	fmt.Printf("job-search GUI: http://%s  (profile=%s, cache=%s)\n", *addr, *profPath, *cachePath)
+	fmt.Printf("job-search GUI: http://%s  (cache=%s, run mode: %s)\n", *addr, *cachePath, mode)
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
+// enableLive wires the real ingest+verify dependencies from the environment:
+// APIFY_TOKEN (required), APIFY_BASE_URL (optional mock/proxy), APIFY_ACTOR_ID
+// (optional), and the JUDGE_* config (JUDGE_BACKEND=mock keeps it $0 for testing).
+func (s *server) enableLive() error {
+	token := os.Getenv("APIFY_TOKEN")
+	if token == "" {
+		return fmt.Errorf("APIFY_TOKEN is not set")
+	}
+	jd, err := judge.FromEnv()
+	if err != nil {
+		return err
+	}
+	var opts []apify.Option
+	if base := os.Getenv("APIFY_BASE_URL"); base != "" {
+		opts = append(opts, apify.WithBaseURL(base))
+	}
+	s.live = true
+	s.actorID = envOr("APIFY_ACTOR_ID", defaultLinkedInActor)
+	s.apify = apify.New(token, opts...)
+	s.resolver = ats.NewResolver(ats.NewCached(greenhouse.New()), ats.NewCached(lever.New()))
+	s.judge = jd
+	return nil
+}
+
+func envOr(key, def string) string {
+	if v := os.Getenv(key); v != "" {
+		return v
+	}
+	return def
+}
+
 type server struct {
 	profPath, cachePath string
-	jobsMu              sync.Mutex
-	jobs                map[string]*jobState
-	jobSeq              atomic.Int64
+	// Live-run dependencies — nil unless started with --live.
+	live     bool
+	spends   bool // true only when live AND using real (non-mock) backends
+	actorID  string
+	apify    *apify.Client
+	resolver *ats.Resolver
+	judge    judge.Judge
+
+	jobsMu sync.Mutex
+	jobs   map[string]*jobState
+	jobSeq atomic.Int64
 }
 
 // jobState is one search run's live progress. The mock runner drives it; a real
@@ -61,6 +130,7 @@ type server struct {
 type jobState struct {
 	mu          sync.Mutex
 	id          string
+	spends      bool   // whether this run actually spends (real backends)
 	status      string // running | done | error
 	phase       string // apify | verify | done
 	apifyDone   int
@@ -81,7 +151,7 @@ func (j *jobState) snapshot() map[string]any {
 	j.mu.Lock()
 	defer j.mu.Unlock()
 	m := map[string]any{
-		"id": j.id, "status": j.status, "phase": j.phase,
+		"id": j.id, "status": j.status, "phase": j.phase, "spends": j.spends,
 		"apify":  map[string]int{"done": j.apifyDone, "total": j.apifyTotal},
 		"verify": map[string]int{"done": j.verifyDone, "total": j.verifyTotal},
 		"rate":   map[string]float64{"used": j.rateUsed, "limit": j.rateLimit},
@@ -101,10 +171,12 @@ const (
 	maxJobCount = 10000 // hard ceiling on a run's job count
 )
 
-// runReq is a run's POST body: the profile plus the requested job count.
+// runReq is a run's POST body: the profile, the requested job count, and the
+// search keywords (used only for a live scrape).
 type runReq struct {
 	profile.Profile
-	JobCount int `json:"job_count"`
+	JobCount int    `json:"job_count"`
+	Keywords string `json:"keywords"`
 }
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
@@ -123,28 +195,39 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			count = maxJobCount
 		}
 		p := req.Profile
-		header, data, err := s.loadCache()
-		if err != nil {
-			httpErr(w, err)
-			return
-		}
-		// The suite is the profile's filtered listings, capped at the job count
-		// (and, for this mock, by however many cached rows exist to replay).
-		rows := filter.Apply(header, data, p.Filters, p.EstimateSalary, time.Now())
-		if len(rows) > count {
-			rows = rows[:count]
-		}
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
-			id: id, status: "running", phase: "apify",
-			apifyTotal: len(rows), verifyTotal: len(rows),
+			id: id, spends: s.spends, status: "running", phase: "apify",
+			apifyTotal: count, verifyTotal: count,
 			rateUsed: 0.19, rateLimit: 5.00, // free-plan baseline
-			header: header, cfg: report.ConfigFrom(p),
+			cfg: report.ConfigFrom(p),
 		}
-		s.jobsMu.Lock()
-		s.jobs[id] = j
-		s.jobsMu.Unlock()
-		go runMock(j, rows)
+
+		if s.live {
+			j.header = output.Header()
+			s.jobsMu.Lock()
+			s.jobs[id] = j
+			s.jobsMu.Unlock()
+			go s.runReal(j, req.Keywords, p, count)
+		} else {
+			header, data, lerr := s.loadCache()
+			if lerr != nil {
+				httpErr(w, lerr)
+				return
+			}
+			// The mock replays the profile's filtered cached rows, capped at the
+			// job count and bounded by the cache size.
+			rows := filter.Apply(header, data, p.Filters, p.EstimateSalary, time.Now())
+			if len(rows) > count {
+				rows = rows[:count]
+			}
+			j.header = header
+			j.apifyTotal, j.verifyTotal = len(rows), len(rows)
+			s.jobsMu.Lock()
+			s.jobs[id] = j
+			s.jobsMu.Unlock()
+			go runMock(j, rows)
+		}
 		writeJSON(w, map[string]string{"id": id})
 	case http.MethodGet:
 		s.jobsMu.Lock()
@@ -195,6 +278,88 @@ func runMock(j *jobState, rows [][]string) {
 	}
 	j.mu.Lock()
 	j.status, j.phase, j.rows = "done", "done", rows
+	j.mu.Unlock()
+}
+
+// runReal drives the actual pipeline, updating the same jobState the mock does:
+// build the search URL from keywords + filters, start the Apify scrape and poll
+// its dataset item-count for the Apify-load bar, normalize, verify (ATS + Claude)
+// with a per-listing callback for the post-process bar, apply the profile's
+// filters, and read the account's Apify usage for the rate bar.
+func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count int) {
+	ctx := context.Background()
+	fail := func(msg string) {
+		j.mu.Lock()
+		j.status, j.errMsg = "error", msg
+		j.mu.Unlock()
+	}
+
+	q := watchlist.Query{
+		Field: keywords, MaxAgeDays: p.Filters.MaxAgeDays,
+		Remote: p.Filters.RemoteOK, SalaryMin: p.Filters.MinSalary,
+	}
+	if len(p.Filters.Locations) > 0 {
+		q.Location = p.Filters.Locations[0]
+	}
+	input := map[string]any{"urls": []string{q.SearchURL()}, "count": count, "scrapeCompany": true}
+
+	started, err := s.apify.StartRun(ctx, s.actorID, input)
+	if err != nil {
+		fail("start scrape: " + err.Error())
+		return
+	}
+	// Poll the dataset item-count for the Apify-load bar while the run runs.
+	for {
+		if cnt, e := s.apify.DatasetInfo(ctx, started.DefaultDatasetID); e == nil {
+			if cnt > count {
+				cnt = count
+			}
+			j.mu.Lock()
+			j.apifyDone = cnt
+			j.mu.Unlock()
+		}
+		st, e := s.apify.RunStatus(ctx, started.ID)
+		if e != nil {
+			fail("poll run: " + e.Error())
+			return
+		}
+		if st.Status == "SUCCEEDED" {
+			break
+		}
+		if st.Status == "FAILED" || st.Status == "ABORTED" || st.Status == "TIMED-OUT" {
+			fail("scrape ended " + st.Status)
+			return
+		}
+		time.Sleep(2 * time.Second)
+	}
+
+	raw, err := s.apify.DatasetItems(ctx, started.DefaultDatasetID)
+	if err != nil {
+		fail("fetch dataset: " + err.Error())
+		return
+	}
+	listings := linkedin.Normalize(raw)
+	j.mu.Lock()
+	j.apifyDone, j.phase, j.verifyTotal, j.verifyDone = j.apifyTotal, "verify", len(listings), 0
+	j.mu.Unlock()
+
+	var done int64
+	results := pipeline.Verify(ctx, listings, s.resolver, s.judge, score.DefaultWeights(), 8, nil, func() {
+		n := atomic.AddInt64(&done, 1)
+		j.mu.Lock()
+		j.verifyDone = int(n)
+		j.mu.Unlock()
+	})
+
+	rows := filter.Apply(output.Header(), output.Rows(results), p.Filters, p.EstimateSalary, time.Now())
+	used, limit, _ := s.apify.Usage(ctx)
+
+	j.mu.Lock()
+	j.rows = rows
+	if limit > 0 {
+		j.rateUsed, j.rateLimit = used, limit
+	}
+	j.status, j.phase = "done", "done"
 	j.mu.Unlock()
 }
 

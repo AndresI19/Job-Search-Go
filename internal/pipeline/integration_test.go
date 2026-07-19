@@ -74,8 +74,8 @@ func TestVerifyAgainstFixtureNoNetwork(t *testing.T) {
 	jd := cannedJudge{score: 0.7}
 
 	// Determinism: two runs at different concurrency give identical verdicts.
-	r1 := pipeline.Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 8, nil)
-	r2 := pipeline.Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 1, nil)
+	r1 := pipeline.Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 8, nil, nil)
+	r2 := pipeline.Verify(context.Background(), listings, resolver, jd, score.DefaultWeights(), 1, nil, nil)
 	if len(r1) != len(listings) || len(r2) != len(listings) {
 		t.Fatalf("result count = %d/%d, want %d", len(r1), len(r2), len(listings))
 	}
