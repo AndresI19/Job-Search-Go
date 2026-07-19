@@ -21,3 +21,26 @@ func TestFieldQuery(t *testing.T) {
 		t.Errorf("unknown field should default to the first field")
 	}
 }
+
+func TestLocationCatalog(t *testing.T) {
+	// Every supported location is a usable filter/normalization mapping: a unique
+	// key and label, and at least one lowercase match substring to key off.
+	keys, labels := map[string]bool{}, map[string]bool{}
+	for _, l := range locationCatalog {
+		if keys[l.Key] {
+			t.Errorf("duplicate location key %q", l.Key)
+		}
+		if labels[l.Label] {
+			t.Errorf("duplicate location label %q", l.Label)
+		}
+		keys[l.Key], labels[l.Label] = true, true
+		if len(l.Match) == 0 {
+			t.Errorf("location %q has no match substrings", l.Key)
+		}
+		for _, m := range l.Match {
+			if m != strings.ToLower(m) {
+				t.Errorf("location %q match %q must be lowercase (raw values are lowercased before compare)", l.Key, m)
+			}
+		}
+	}
+}
