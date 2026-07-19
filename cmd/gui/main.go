@@ -333,7 +333,10 @@ var locationCatalog = []struct {
 	{"denver", "Denver", []string{"denver"}},
 	{"washington-dc", "Washington DC", []string{"washington", "arlington", "baltimore"}},
 	{"atlanta", "Atlanta", []string{"atlanta"}},
-	{"united-states", "United States", []string{"united states"}},
+	// Last, as the catch-all: a country-only "United States" tag (or an explicit
+	// "remote") is a nationwide/remote role, not a metro — so it is handled as such,
+	// only after every specific city above has had its chance to match.
+	{"us-remote", "US - Remote", []string{"united states", "usa", "remote", "anywhere"}},
 }
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
