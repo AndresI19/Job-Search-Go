@@ -170,7 +170,7 @@ func run() error {
 	}
 
 	logger.Info("verifying", "listings", len(listings), "workers", *workers)
-	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
+	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger, nil)
 
 	// The full verified set is cached so the GUI can re-filter it for free; the
 	// display CSV is that set narrowed by the profile's filters.

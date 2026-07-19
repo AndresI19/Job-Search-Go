@@ -130,6 +130,55 @@ func (c *Client) WaitForRun(ctx context.Context, runID string, poll time.Duratio
 	}
 }
 
+// RunStatus fetches a run's current state in a single call (WaitForRun loops on
+// this; a progress poller calls it directly alongside DatasetInfo).
+func (c *Client) RunStatus(ctx context.Context, runID string) (RunInfo, error) {
+	url := fmt.Sprintf("%s/actor-runs/%s", c.baseURL, runID)
+	var resp struct {
+		Data RunInfo `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		return RunInfo{}, fmt.Errorf("run status: %w", err)
+	}
+	return resp.Data, nil
+}
+
+// DatasetInfo returns a dataset's current item count — polled during a run to
+// drive a scrape-progress indicator (the actor pushes items as it scrapes).
+func (c *Client) DatasetInfo(ctx context.Context, datasetID string) (int, error) {
+	url := fmt.Sprintf("%s/datasets/%s", c.baseURL, datasetID)
+	var resp struct {
+		Data struct {
+			ItemCount int `json:"itemCount"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		return 0, err
+	}
+	return resp.Data.ItemCount, nil
+}
+
+// Usage returns the account's month-to-date Apify spend and its cap, in USD, for
+// a remaining-budget indicator. Best-effort: a response shape Apify changes just
+// yields zeros rather than an error the caller must handle.
+func (c *Client) Usage(ctx context.Context) (used, limit float64, err error) {
+	url := fmt.Sprintf("%s/users/me/limits", c.baseURL)
+	var resp struct {
+		Data struct {
+			Current struct {
+				MonthlyUsageUsd float64 `json:"monthlyUsageUsd"`
+			} `json:"current"`
+			Limits struct {
+				MaxMonthlyUsageUsd float64 `json:"maxMonthlyUsageUsd"`
+			} `json:"limits"`
+		} `json:"data"`
+	}
+	if err := c.do(ctx, http.MethodGet, url, nil, &resp); err != nil {
+		return 0, 0, err
+	}
+	return resp.Data.Current.MonthlyUsageUsd, resp.Data.Limits.MaxMonthlyUsageUsd, nil
+}
+
 // DatasetItems fetches every item of datasetID as raw JSON objects, leaving
 // field mapping to the caller (the normalizer).
 func (c *Client) DatasetItems(ctx context.Context, datasetID string) ([]json.RawMessage, error) {
