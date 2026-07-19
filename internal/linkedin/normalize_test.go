@@ -98,6 +98,24 @@ func TestParseYears(t *testing.T) {
 	}
 }
 
+func TestIsRemote(t *testing.T) {
+	cases := []struct {
+		loc, desc string
+		want      bool
+	}{
+		{"Remote, US", "irrelevant", true},                     // location says remote
+		{"New York, NY", "This is a fully remote role.", true}, // description signal
+		{"Boston, MA", "Work from home available.", true},      // wfh phrase
+		{"Austin, TX", "Onsite role in our Austin office.", false},
+		{"Chicago, IL", "", false},
+	}
+	for _, c := range cases {
+		if got := isRemote(c.loc, c.desc); got != c.want {
+			t.Errorf("isRemote(%q, %q) = %v, want %v", c.loc, c.desc, got, c.want)
+		}
+	}
+}
+
 func TestParseApplicants(t *testing.T) {
 	cases := map[string]int{"25": 25, "Over 200 applicants": 200, "": -1, "n/a": -1}
 	for in, want := range cases {
