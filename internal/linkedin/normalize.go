@@ -55,7 +55,7 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			Company:          r.CompanyName,
 			CompanyURL:       r.CompanyURL,
 			Location:         r.Location,
-			Remote:           strings.Contains(strings.ToLower(r.Location), "remote"),
+			Remote:           isRemote(r.Location, desc),
 			Posted:           parseDate(r.PostedAt),
 			ApplicantCount:   parseApplicants(r.ApplicantsCount),
 			YearsExperience:  parseYears(desc),
@@ -123,6 +123,32 @@ func parseSalary(s string) (min, max int) {
 		}
 	}
 	return min, max
+}
+
+// remotePhrases are description signals that a role offers remote work. LinkedIn
+// tags most remote-eligible jobs with a city (the HQ), so the location text alone
+// misses them; these phrases are specific enough to avoid matching an in-office
+// posting that merely mentions the word "remote".
+var remotePhrases = []string{
+	"fully remote", "100% remote", "remote-first", "remote first",
+	"work from home", "work-from-home", "wfh", "work remotely",
+	"remote position", "remote role", "remote opportunity",
+	"remote-friendly", "remote friendly", "remote-eligible", "remote eligible",
+}
+
+// isRemote reports whether a listing offers remote work — from the location text
+// (e.g. "Remote, US") or, failing that, an explicit signal in the description.
+func isRemote(location, description string) bool {
+	if strings.Contains(strings.ToLower(location), "remote") {
+		return true
+	}
+	d := strings.ToLower(description)
+	for _, p := range remotePhrases {
+		if strings.Contains(d, p) {
+			return true
+		}
+	}
+	return false
 }
 
 // yearsRE matches an experience requirement like "5+ years", "3-5 years", or
