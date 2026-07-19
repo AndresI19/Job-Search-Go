@@ -15,7 +15,6 @@ import (
 	_ "embed"
 	"fmt"
 	"io"
-	"math"
 	"regexp"
 	"strconv"
 	"strings"
@@ -343,23 +342,17 @@ func Preview(header []string, rows [][]string, cfg Config, now time.Time) (colum
 		vis = append(vis, c)
 		columns = append(columns, h)
 	}
-	locI := colIndex(header, "location")
 	for _, row := range rows {
 		pr := PRow{URL: trimURL(strOf(row, cl.url)), Info: rowInfo(row, ai, si, vi, ci), Cells: make([]PCell, 0, len(vis))}
 		for _, c := range vis {
 			val := strOf(row, c)
 			fill := cfg.fillFor(c, row, cl, now)
-			switch {
-			case c == locI:
-				// Collapse location variants to one label, then tint each distinct
-				// label its own colour (filtering still keys off the raw value).
-				val = normalizeLocation(val)
-				fill = locColor(val)
-			default:
-				if gs, ok := grad[c]; ok && val != "" {
-					if v, err := strconv.ParseFloat(val, 64); err == nil {
-						fill = gradientHex(v, gs)
-					}
+			// Location normalization + colouring is a display concern the web client
+			// owns, keyed off the shared location catalog it already has; here the raw
+			// value passes through untouched.
+			if gs, ok := grad[c]; ok && val != "" {
+				if v, err := strconv.ParseFloat(val, 64); err == nil {
+					fill = gradientHex(v, gs)
 				}
 			}
 			pr.Cells = append(pr.Cells, PCell{Value: val, Fill: fill})
@@ -367,83 +360,6 @@ func Preview(header []string, rows [][]string, cfg Config, now time.Time) (colum
 		table = append(table, pr)
 	}
 	return columns, table
-}
-
-// normalizeLocation collapses the many ways one place is written ("New York, NY",
-// "New York, United States", "New York City Metropolitan Area") to a single label,
-// so a location reads and colours consistently. Known metros are mapped
-// explicitly; anything else falls back to the text before the first comma.
-func normalizeLocation(s string) string {
-	l := strings.ToLower(strings.TrimSpace(s))
-	if l == "" {
-		return ""
-	}
-	switch {
-	case strings.Contains(l, "remote"):
-		return "Remote"
-	case strings.Contains(l, "new york"):
-		return "New York"
-	case strings.Contains(l, "los angeles"):
-		return "Los Angeles"
-	case strings.Contains(l, "san francisco"), strings.Contains(l, "bay area"):
-		return "San Francisco"
-	case strings.Contains(l, "boston"):
-		return "Boston"
-	case strings.Contains(l, "seattle"):
-		return "Seattle"
-	case strings.Contains(l, "chicago"):
-		return "Chicago"
-	case strings.Contains(l, "austin"):
-		return "Austin"
-	case l == "united states" || l == "usa" || l == "us":
-		return "United States"
-	}
-	if i := strings.IndexByte(s, ','); i > 0 {
-		s = s[:i]
-	}
-	return strings.TrimSpace(s)
-}
-
-// locColor gives each distinct location its own colour: a light pastel whose hue
-// is a stable hash of the label, so the same place is always the same colour and
-// different places (nearly always) differ. The fixed high lightness keeps black
-// text readable on every hue.
-func locColor(s string) string {
-	if s == "" {
-		return ""
-	}
-	// FNV-1a — mixes better than a simple polynomial hash, so similar labels
-	// (New York / Los Angeles) land on well-separated hues rather than adjacent ones.
-	var h uint32 = 2166136261
-	for i := 0; i < len(s); i++ {
-		h ^= uint32(s[i])
-		h *= 16777619
-	}
-	return hslHex(float64(h%360), 0.55, 0.86)
-}
-
-// hslHex converts an HSL colour (h in [0,360), s and l in [0,1]) to a hex string.
-func hslHex(h, s, l float64) string {
-	c := (1 - math.Abs(2*l-1)) * s
-	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
-	m := l - c/2
-	var r, g, b float64
-	switch {
-	case h < 60:
-		r, g, b = c, x, 0
-	case h < 120:
-		r, g, b = x, c, 0
-	case h < 180:
-		r, g, b = 0, c, x
-	case h < 240:
-		r, g, b = 0, x, c
-	case h < 300:
-		r, g, b = x, 0, c
-	default:
-		r, g, b = c, 0, x
-	}
-	hex := func(v float64) int { return int((v+m)*255 + 0.5) }
-	return fmt.Sprintf("%02X%02X%02X", hex(r), hex(g), hex(b))
 }
 
 func colIndex(header []string, name string) int {

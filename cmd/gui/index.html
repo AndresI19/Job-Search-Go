@@ -174,7 +174,7 @@
   th.num, td.num { padding-left: 6px; }
   td.reason { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
   /* Location trims like title/reason; the hover tooltip reveals the full value. */
-  td.location { max-width: 150px; overflow: hidden; text-overflow: ellipsis; }
+  td.location { max-width: 104px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   /* The per-row info icon replaces the apply/source/verified/coverage columns. */
   td.info { text-align: center; color: var(--accent); cursor: help; font-weight: 800; width: 1%; user-select: none; }
   th.infoh { width: 1%; }
@@ -234,8 +234,8 @@
         <label class="field-full"><span>Field (searches all its roles)</span>
           <div class="chipselect" id="fields"></div></label>
         <label class="row"><span>Job count <small>(max 10k)</small></span><input type="number" id="job_count" min="1" max="10000" value="10"></label>
-        <label class="field-full"><span>Locations (comma-separated)</span>
-          <input type="text" id="locations" placeholder="Boston, New York, Los Angeles"></label>
+        <label class="field-full"><span>Locations</span>
+          <div class="chipselect" id="locsel"></div></label>
         <label class="row"><span>Allow remote anywhere</span><input type="checkbox" id="remote_ok"></label>
         <label class="row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0"></label>
         <label class="row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000"></label>
@@ -282,7 +282,7 @@
     <div class="resbar">
       <button class="rbtn" id="export" title="Download the current results as a CSV">⭳&nbsp; Export</button>
       <button class="rbtn" id="import-btn" title="Load a previously exported results CSV">⭱&nbsp; Import</button>
-      <input type="file" id="import-file" accept=".csv,text/csv" hidden>
+      <input type="file" id="import-file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,application/csv" hidden>
     </div>
     <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>
     <div class="pager" id="pager"></div>
@@ -299,7 +299,6 @@ let role = 'guest';                                  // corner profile switch: g
 let runCfg = { realReady: false, spends: false };    // from /api/config
 
 function populate(p) {
-  $('locations').value = (p.filters.locations || []).join(', ');
   $('remote_ok').checked = p.filters.remote_ok;
   $('max_age_days').value = p.filters.max_age_days;
   $('min_salary').value = p.filters.min_salary;
@@ -319,7 +318,7 @@ function collect() {
   const c = id => $(id).checked;
   return {
     filters: {
-      locations: $('locations').value.split(',').map(s => s.trim()).filter(Boolean),
+      locations: expandLocations(),
       remote_ok: c('remote_ok'), max_age_days: n('max_age_days'),
       min_salary: n('min_salary'), min_score: n('min_score'), include_ghosts: c('include_ghosts'),
     },
@@ -389,7 +388,7 @@ function render() {
     const info = r.info ? `<td class="info" data-info="${esc(r.info)}">ⓘ</td>` : '<td class="info"></td>';
     const tds = info + r.cells.map((cell, i) => {
       const name = columns[i];
-      const bg = cell.fill ? ` style="background:#${cell.fill}"` : '';
+      let bg = cell.fill ? ` style="background:#${cell.fill}"` : '';
       let val = fmt(name, cell.value), cls = '';
       if (i === idxTitle) {
         cls = 'title';
@@ -400,6 +399,9 @@ function render() {
         cls = 'remote ' + (yes ? 'yes' : 'no');
       } else if (name === 'location') {
         cls = 'location';
+        const norm = normalizeLocation(cell.value); // collapse to a supported label
+        val = esc(norm);
+        bg = norm ? ` style="background:${hashColor(norm)}"` : '';
       } else if (name === 'reasoning') {
         cls = 'reason';
       } else if (isNumericCol(name)) {
@@ -408,7 +410,7 @@ function render() {
       let td = `<td class="${cls}"${bg}>${val}</td>`;
       if (i === idxTitle) { // inject the Role column right after title
         const rl = classifyRole(cell.value);
-        td += `<td class="role" style="background:${roleColor(rl)}">${esc(rl)}</td>`;
+        td += `<td class="role" style="background:${hashColor(rl)}">${esc(rl)}</td>`;
       }
       return td;
     }).join('');
@@ -592,12 +594,45 @@ function classifyRole(title) {
   if (roles[0] && (roles[0].match || []).some(m => t.includes(m))) return roles[0].label;
   return 'Other';
 }
-// roleColor tints a role its own colour by a stable hash of the label — the same
-// logic as the location column.
-function roleColor(label) {
+// hashColor tints a label its own pastel by a stable FNV-1a hash of its text, so the
+// same label is always the same colour and different ones separate well. Shared by
+// the Role and Location columns.
+function hashColor(label) {
   let h = 2166136261 >>> 0;
   for (let i = 0; i < label.length; i++) { h ^= label.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
   return `hsl(${h % 360},55%,86%)`;
+}
+
+// Location select box — the supported, explicitly-mapped places (from /api/config).
+// The same catalog drives three things: the chips, the filter (a selected place
+// expands to its match substrings), and the display normalization.
+let locationsCatalog = [];                                   // [{key,label,match}]
+let selectedLocations = new Set(['new-york', 'boston', 'los-angeles']);
+function renderLocations() {
+  const el = $('locsel');
+  el.innerHTML = locationsCatalog.map(l =>
+    `<button type="button" class="pchip${selectedLocations.has(l.key) ? ' sel' : ''}" data-key="${esc(l.key)}">${esc(l.label)}</button>`).join('');
+  el.querySelectorAll('.pchip').forEach(b => b.addEventListener('click', () => {
+    const k = b.dataset.key;
+    selectedLocations.has(k) ? selectedLocations.delete(k) : selectedLocations.add(k);
+    renderLocations();
+  }));
+}
+// expandLocations turns the selected places into the raw match substrings the filter
+// keys off — so "New York" filters in "New York, NY", "NYC", "Brooklyn", etc.
+function expandLocations() {
+  const terms = [];
+  for (const l of locationsCatalog) if (selectedLocations.has(l.key)) terms.push(...(l.match || []));
+  return terms;
+}
+// normalizeLocation collapses a raw location to its supported label, or the text
+// before the first comma when no supported place matches.
+function normalizeLocation(raw) {
+  const t = (raw || '').toLowerCase().trim();
+  if (!t) return '';
+  for (const l of locationsCatalog) if ((l.match || []).some(m => t.includes(m))) return l.label;
+  const i = raw.indexOf(',');
+  return (i > 0 ? raw.slice(0, i) : raw).trim();
 }
 
 fetch('/api/config').then(r => r.json()).then(c => {
@@ -610,6 +645,8 @@ fetch('/api/config').then(r => r.json()).then(c => {
   fields = c.fields || [];
   selectedField = fields[0] ? fields[0].key : null;
   renderFields();
+  locationsCatalog = c.locations || [];
+  renderLocations();
   applyMode();
 }).catch(() => {});
 

@@ -102,7 +102,11 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 		}
 		fields = append(fields, map[string]any{"key": f.Key, "label": f.Label, "roles": roles})
 	}
-	writeJSON(w, map[string]any{"realReady": s.realReady, "spends": s.spends, "fields": fields})
+	locs := make([]map[string]any, len(locationCatalog))
+	for i, l := range locationCatalog {
+		locs[i] = map[string]any{"key": l.Key, "label": l.Label, "match": l.Match}
+	}
+	writeJSON(w, map[string]any{"realReady": s.realReady, "spends": s.spends, "fields": fields, "locations": locs})
 }
 
 // enableLive wires the real ingest+verify dependencies from the environment:
@@ -309,6 +313,27 @@ func fieldQuery(key string) string {
 		parts[i] = r.Query
 	}
 	return strings.Join(parts, " OR ")
+}
+
+// locationCatalog is the explicitly-supported locations. Each maps a set of
+// raw-location substrings to one label — the location select box, the filter, and
+// the display normalization all key off it, so a place is handled by explicit
+// support rather than an arbitrary heuristic.
+var locationCatalog = []struct {
+	Key, Label string
+	Match      []string
+}{
+	{"new-york", "New York", []string{"new york", "nyc", "manhattan", "brooklyn"}},
+	{"boston", "Boston", []string{"boston", "cambridge"}},
+	{"los-angeles", "Los Angeles", []string{"los angeles", "marina del rey", "huntington beach"}},
+	{"san-francisco", "San Francisco", []string{"san francisco", "bay area", "palo alto", "mountain view", "menlo park", "san jose", "silicon valley"}},
+	{"seattle", "Seattle", []string{"seattle", "bellevue", "redmond"}},
+	{"chicago", "Chicago", []string{"chicago"}},
+	{"austin", "Austin", []string{"austin"}},
+	{"denver", "Denver", []string{"denver"}},
+	{"washington-dc", "Washington DC", []string{"washington", "arlington", "baltimore"}},
+	{"atlanta", "Atlanta", []string{"atlanta"}},
+	{"united-states", "United States", []string{"united states"}},
 }
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
