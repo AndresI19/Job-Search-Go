@@ -38,6 +38,22 @@
       var(--bg);
     background-attachment: fixed;
   }
+  /* Corner profile switch — a fake identity toggle (NOT auth) that picks the run
+     mode: Guest = $0 mock, Admin = the real pipeline. */
+  .idswitch {
+    position: fixed; top: 10px; right: 14px; z-index: 40;
+    display: flex; align-items: center; gap: 9px; font-size: 12px;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    box-shadow: var(--shadow); padding: 4px 11px 4px 13px;
+  }
+  .idlabel { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; font-size: 10px; }
+  .idseg { display: inline-flex; background: var(--panel-2); border-radius: 999px; padding: 2px; }
+  .idbtn { border: 0; background: transparent; color: var(--muted); font: inherit; font-size: 12px; font-weight: 700; padding: 4px 13px; border-radius: 999px; cursor: pointer; }
+  .idbtn.active { background: var(--accent); color: var(--accent-ink); }
+  .idbtn:disabled { opacity: .4; cursor: not-allowed; }
+  .idmode { font-weight: 800; font-size: 11px; color: var(--muted); min-width: 68px; }
+  .idmode.spend { color: #d0433b; }
+
   /* Two columns: the filters banner (fold built in) and the table. */
   .layout { display: grid; grid-template-columns: auto 1fr; gap: 12px; padding: 12px 18px 24px; align-items: start; }
   @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } .foldbar { display: none; } }
@@ -177,6 +193,15 @@
 </style>
 </head>
 <body>
+<div class="idswitch" title="Not real auth — a mode switch. Guest runs the $0 mock; Admin runs the real Apify + Claude pipeline.">
+  <span class="idlabel">Profile</span>
+  <div class="idseg">
+    <button class="idbtn active" data-role="guest">Guest</button>
+    <button class="idbtn" data-role="admin" id="admin-btn">Admin</button>
+  </div>
+  <span class="idmode" id="idmode">mock · $0</span>
+</div>
+
 <div class="layout" id="layout">
   <aside class="banner">
     <div class="filters-body">
@@ -246,6 +271,8 @@ let sortState = { col: -1, dir: 1 };
 let last = null;
 let page = 0;
 const PAGE_SIZE = 40;
+let role = 'guest';                                  // corner profile switch: guest | admin
+let runCfg = { realReady: false, spends: false };    // from /api/config
 
 function populate(p) {
   $('locations').value = (p.filters.locations || []).join(', ');
@@ -279,6 +306,7 @@ function collect() {
     estimate_salary: c('estimate_salary'),
     job_count: n('job_count'),
     keywords: $('keywords').value.trim(),
+    role: role,
   };
 }
 
@@ -457,6 +485,30 @@ async function poll(id) {
 }
 
 $('run').addEventListener('click', run);
+
+// Corner profile switch — Guest runs the $0 mock, Admin runs the real pipeline.
+function applyMode() {
+  const admin = role === 'admin';
+  const spends = admin && runCfg.spends;
+  const el = $('idmode');
+  el.textContent = !admin ? 'mock · $0' : (spends ? 'LIVE · spends' : 'real · $0');
+  el.className = 'idmode' + (spends ? ' spend' : '');
+  document.querySelectorAll('.idbtn').forEach(b => b.classList.toggle('active', b.dataset.role === role));
+}
+document.querySelectorAll('.idbtn').forEach(b => b.addEventListener('click', () => {
+  if (b.disabled) return;
+  role = b.dataset.role;
+  applyMode();
+}));
+fetch('/api/config').then(r => r.json()).then(c => {
+  runCfg = c;
+  if (!c.realReady) {
+    const a = $('admin-btn');
+    a.disabled = true;
+    a.title = 'Real runs unavailable — start the server with APIFY_TOKEN set';
+  }
+  applyMode();
+}).catch(() => {});
 
 // Fold the sidebar to give the listings the full width. The toggle lives in main, so it is still
 // there to un-fold with.

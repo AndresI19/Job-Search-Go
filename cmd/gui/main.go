@@ -17,6 +17,7 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -47,41 +48,54 @@ func main() {
 	addr := flag.String("addr", "localhost:8080", "listen address")
 	profPath := flag.String("profile", "profile.yaml", "profile YAML to load and save")
 	cachePath := flag.String("cache", "results.cache.csv", "verified-result cache to preview against")
-	live := flag.Bool("live", false, "Run does a REAL Apify scrape + Claude verify (spends); default is the $0 mock")
 	flag.Parse()
 
 	s := &server{profPath: *profPath, cachePath: *cachePath, jobs: map[string]*jobState{}}
-	mode := "mock ($0)"
-	if *live {
-		if err := s.enableLive(); err != nil {
-			fmt.Fprintln(os.Stderr, "error: --live:", err)
-			os.Exit(1)
-		}
-		mode = "LIVE — real Apify + Claude (spends)"
-		s.spends = true
-		if os.Getenv("APIFY_BASE_URL") != "" || os.Getenv("JUDGE_BACKEND") == "mock" {
-			mode = "LIVE via mocks (APIFY_BASE_URL / JUDGE_BACKEND=mock — $0)"
-			s.spends = false
-		}
+	// Wire the real pipeline if the environment allows it. Runs pick mock vs real
+	// per request from the corner profile switch (Guest=mock, Admin=real); this
+	// just makes the real path AVAILABLE. Best-effort — without it, Admin falls
+	// back to the mock rather than the server failing to start.
+	if err := s.enableLive(); err != nil {
+		fmt.Fprintf(os.Stderr, "note: Admin (real) runs unavailable — %v; Admin will fall back to mock\n", err)
 	}
 
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", s.index)
+	mux.HandleFunc("/api/config", s.config)
 	mux.HandleFunc("/api/profile", s.profile)
 	mux.HandleFunc("/api/preview", s.preview)
 	mux.HandleFunc("/api/download", s.download)
 	mux.HandleFunc("/api/run", s.run)
 
-	fmt.Printf("job-search GUI: http://%s  (cache=%s, run mode: %s)\n", *addr, *cachePath, mode)
+	fmt.Printf("job-search GUI: http://%s  (cache=%s, %s)\n", *addr, *cachePath, s.modeLine())
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
 }
 
+// modeLine describes, for the startup log, what Guest and Admin runs will do.
+func (s *server) modeLine() string {
+	switch {
+	case !s.realReady:
+		return "Guest & Admin both mock ($0) — set APIFY_TOKEN for real Admin runs"
+	case s.spends:
+		return "Guest=mock ($0), Admin=REAL Apify+Claude (SPENDS)"
+	default:
+		return "Guest=mock ($0), Admin=real path via mock backends ($0)"
+	}
+}
+
+// config tells the UI whether Admin (real) runs are available and whether they
+// spend, so the corner profile switch can enable and label Admin correctly.
+func (s *server) config(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]bool{"realReady": s.realReady, "spends": s.spends})
+}
+
 // enableLive wires the real ingest+verify dependencies from the environment:
 // APIFY_TOKEN (required), APIFY_BASE_URL (optional mock/proxy), APIFY_ACTOR_ID
 // (optional), and the JUDGE_* config (JUDGE_BACKEND=mock keeps it $0 for testing).
+// It also records whether real runs would actually spend (real, non-mock backends).
 func (s *server) enableLive() error {
 	token := os.Getenv("APIFY_TOKEN")
 	if token == "" {
@@ -95,7 +109,8 @@ func (s *server) enableLive() error {
 	if base := os.Getenv("APIFY_BASE_URL"); base != "" {
 		opts = append(opts, apify.WithBaseURL(base))
 	}
-	s.live = true
+	s.realReady = true
+	s.spends = os.Getenv("APIFY_BASE_URL") == "" && os.Getenv("JUDGE_BACKEND") != "mock"
 	s.actorID = envOr("APIFY_ACTOR_ID", defaultLinkedInActor)
 	s.apify = apify.New(token, opts...)
 	s.resolver = ats.NewResolver(ats.NewCached(greenhouse.New()), ats.NewCached(lever.New()))
@@ -112,13 +127,13 @@ func envOr(key, def string) string {
 
 type server struct {
 	profPath, cachePath string
-	// Live-run dependencies — nil unless started with --live.
-	live     bool
-	spends   bool // true only when live AND using real (non-mock) backends
-	actorID  string
-	apify    *apify.Client
-	resolver *ats.Resolver
-	judge    judge.Judge
+	// Real-run dependencies — nil unless the environment enabled them.
+	realReady bool
+	spends    bool // true only when real runs use real (non-mock) backends
+	actorID   string
+	apify     *apify.Client
+	resolver  *ats.Resolver
+	judge     judge.Judge
 
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
@@ -177,6 +192,7 @@ type runReq struct {
 	profile.Profile
 	JobCount int    `json:"job_count"`
 	Keywords string `json:"keywords"`
+	Role     string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
 }
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
@@ -195,15 +211,18 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			count = maxJobCount
 		}
 		p := req.Profile
+		// The corner profile switch picks the path: Admin → the real pipeline (only
+		// when the environment made it available), everyone else → the mock.
+		real := s.realReady && strings.EqualFold(req.Role, "admin")
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
-			id: id, spends: s.spends, status: "running", phase: "apify",
+			id: id, spends: real && s.spends, status: "running", phase: "apify",
 			apifyTotal: count, verifyTotal: count,
 			rateUsed: 0.19, rateLimit: 5.00, // free-plan baseline
 			cfg: report.ConfigFrom(p),
 		}
 
-		if s.live {
+		if real {
 			j.header = output.Header()
 			s.jobsMu.Lock()
 			s.jobs[id] = j
