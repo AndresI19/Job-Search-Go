@@ -105,6 +105,16 @@
   input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
   .field-full { display: block; margin: 5px 0; }
   .field-full span { display: block; color: var(--muted); font-size: 11.5px; margin-bottom: 3px; }
+  /* Profession multiselect — toggle chips. */
+  .chipselect { display: flex; flex-wrap: wrap; gap: 5px; }
+  .pchip {
+    border: 1px solid var(--line); background: var(--panel-2); color: var(--muted);
+    border-radius: 999px; padding: 3px 10px; font: inherit; font-size: 11.5px; font-weight: 700;
+    cursor: pointer; user-select: none; transition: background .12s, color .12s, border-color .12s;
+  }
+  .pchip:hover { border-color: var(--accent); color: var(--accent); }
+  .pchip.sel { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .pchip.sel:hover { color: var(--accent-ink); }
   /* Recency: three tight fields on one row, to save the vertical space of three stacked rows. */
   .inline-fields { display: flex; gap: 7px; }
   .inline-fields label { flex: 1; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--muted); }
@@ -166,6 +176,8 @@
   /* The per-row info icon replaces the apply/source/verified/coverage columns. */
   td.info { text-align: center; color: var(--accent); cursor: help; font-weight: 800; width: 1%; user-select: none; }
   th.infoh { width: 1%; }
+  /* Role column (next to title) — classified from the title, tinted per role. */
+  td.role { font-weight: 600; white-space: nowrap; }
   .empty { padding: 34px; text-align: center; color: var(--muted); }
 
   .pager { display: flex; align-items: center; gap: 12px; margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); }
@@ -217,8 +229,8 @@
 
       <fieldset>
         <legend>Filters</legend>
-        <label class="field-full"><span>Search keywords</span>
-          <input type="text" id="keywords" placeholder="Software Engineer"></label>
+        <label class="field-full"><span>Field (searches all its roles)</span>
+          <div class="chipselect" id="fields"></div></label>
         <label class="row"><span>Job count <small>(max 10k)</small></span><input type="number" id="job_count" min="1" max="10000" value="10"></label>
         <label class="field-full"><span>Locations (comma-separated)</span>
           <input type="text" id="locations" placeholder="Boston, New York, Los Angeles"></label>
@@ -310,7 +322,7 @@ function collect() {
     },
     estimate_salary: c('estimate_salary'),
     job_count: n('job_count'),
-    keywords: $('keywords').value.trim(),
+    field: selectedField,
     role: role,
   };
 }
@@ -386,13 +398,18 @@ function render() {
       } else if (isNumericCol(name)) {
         cls = 'num';
       }
-      return `<td class="${cls}"${bg}>${val}</td>`;
+      let td = `<td class="${cls}"${bg}>${val}</td>`;
+      if (i === idxTitle) { // inject the Role column right after title
+        const rl = classifyRole(cell.value);
+        td += `<td class="role" style="background:${roleColor(rl)}">${esc(rl)}</td>`;
+      }
+      return td;
     }).join('');
     return `<tr>${tds}</tr>`;
   }).join('');
 
-  const legrow = '<th></th>' + columns.map(c => `<th class="legcell">${legendChips(c)}</th>`).join('');
-  const head = '<th class="infoh"></th>' + columns.map((c, i) => `<th data-col="${i}" class="${isNumericCol(c) ? 'num' : ''}">${label(c)}</th>`).join('');
+  const legrow = '<th></th>' + columns.map((c, i) => `<th class="legcell">${legendChips(c)}</th>` + (i === idxTitle ? '<th></th>' : '')).join('');
+  const head = '<th class="infoh"></th>' + columns.map((c, i) => `<th data-col="${i}" class="${isNumericCol(c) ? 'num' : ''}">${label(c)}</th>` + (i === idxTitle ? '<th class="roleh">role</th>' : '')).join('');
   $('table').outerHTML = `<table id="table"><thead><tr class="legrow">${legrow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
   document.querySelectorAll('#table thead tr:last-child th[data-col]').forEach(th =>
     th.addEventListener('click', () => sortBy(Number(th.dataset.col))));
@@ -510,6 +527,42 @@ document.querySelectorAll('.idbtn').forEach(b => b.addEventListener('click', () 
   role = b.dataset.role;
   applyMode();
 }));
+// Field selector — single-select (only Software for now). A field searches ALL its
+// roles; the Role column classifies each result into one of them.
+let fields = [];              // [{key,label,roles:[{key,label,match}]}]
+let selectedField = null;
+function currentRoles() { const f = fields.find(x => x.key === selectedField); return f ? f.roles : []; }
+
+function renderFields() {
+  const el = $('fields');
+  el.innerHTML = fields.map(f =>
+    `<button type="button" class="pchip${f.key === selectedField ? ' sel' : ''}" data-key="${esc(f.key)}">${esc(f.label)}</button>`).join('');
+  el.querySelectorAll('.pchip').forEach(b => b.addEventListener('click', () => {
+    selectedField = b.dataset.key;
+    renderFields();
+    if (last) render(); // re-classify the Role column for the new field
+  }));
+}
+
+// classifyRole maps a listing title to one of the field's roles by its match
+// substrings — specific roles first, the generic one (roles[0]) last.
+function classifyRole(title) {
+  const t = (title || '').toLowerCase();
+  const roles = currentRoles();
+  for (const r of roles.slice(1)) {
+    if ((r.match || []).some(m => t.includes(m))) return r.label;
+  }
+  if (roles[0] && (roles[0].match || []).some(m => t.includes(m))) return roles[0].label;
+  return 'Other';
+}
+// roleColor tints a role its own colour by a stable hash of the label — the same
+// logic as the location column.
+function roleColor(label) {
+  let h = 2166136261 >>> 0;
+  for (let i = 0; i < label.length; i++) { h ^= label.charCodeAt(i); h = Math.imul(h, 16777619) >>> 0; }
+  return `hsl(${h % 360},55%,86%)`;
+}
+
 fetch('/api/config').then(r => r.json()).then(c => {
   runCfg = c;
   if (!c.realReady) {
@@ -517,6 +570,9 @@ fetch('/api/config').then(r => r.json()).then(c => {
     a.disabled = true;
     a.title = 'Real runs unavailable — start the server with APIFY_TOKEN set';
   }
+  fields = c.fields || [];
+  selectedField = fields[0] ? fields[0].key : null;
+  renderFields();
   applyMode();
 }).catch(() => {});
 
