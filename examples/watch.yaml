@@ -8,7 +8,7 @@
 defaults:
   location: "United States"
   sources: [greenhouse, lever] # ATS boards to verify listings against
-  max_age_days: 30             # drop stale reposts (also a LinkedIn recency facet)
+  max_age_days: 90             # drop listings older than ~3 months (also a LinkedIn recency facet)
 
 queries:
   - field: "backend engineer" # job field / search keywords (required)

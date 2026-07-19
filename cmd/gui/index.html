@@ -1,0 +1,293 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Search — Profile</title>
+<style>
+  :root {
+    --bg: #f4f5f7; --panel: #ffffff; --ink: #1a1f2b; --muted: #626b7d;
+    --line: #dfe3ea; --accent: #1f3b73; --accent-ink: #ffffff; --field: #ffffff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #12151c; --panel: #1a1f2b; --ink: #e7ebf2; --muted: #94a0b4;
+      --line: #2b3444; --accent: #6d9be6; --accent-ink: #0c111a; --field: #12161f;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font: 14px/1.5 system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+  }
+  header {
+    padding: 14px 22px; border-bottom: 1px solid var(--line);
+    display: flex; align-items: baseline; gap: 14px; background: var(--panel);
+  }
+  header h1 { font-size: 17px; margin: 0; font-weight: 650; }
+  header .sub { color: var(--muted); font-size: 12.5px; }
+  .layout { display: grid; grid-template-columns: 300px 1fr; gap: 0; align-items: start; }
+  @media (max-width: 820px) { .layout { grid-template-columns: 1fr; } }
+  aside {
+    padding: 18px; border-right: 1px solid var(--line); background: var(--panel);
+    position: sticky; top: 0; max-height: 100vh; overflow-y: auto;
+  }
+  main { padding: 16px 18px; min-width: 0; }
+  fieldset { border: 1px solid var(--line); border-radius: 9px; padding: 12px 14px; margin: 0 0 14px; }
+  legend { font-weight: 640; font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); padding: 0 6px; }
+  label.row { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin: 7px 0; }
+  input[type=number], input[type=text] {
+    background: var(--field); color: var(--ink); border: 1px solid var(--line);
+    border-radius: 6px; padding: 5px 8px; font: inherit; width: 116px; text-align: right;
+  }
+  input[type=text] { width: 100%; text-align: left; }
+  input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .field-full { display: block; margin: 8px 0; }
+  .field-full span { display: block; color: var(--muted); font-size: 12px; margin-bottom: 4px; }
+  .actions { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
+  button {
+    font: inherit; font-weight: 600; border: 1px solid var(--line); border-radius: 7px;
+    padding: 8px 13px; cursor: pointer; background: var(--field); color: var(--ink);
+  }
+  button.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+  button:active { transform: translateY(1px); }
+  .status { min-height: 20px; color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+  .status.err { color: #d0433b; }
+  .count { font-weight: 650; color: var(--ink); }
+
+  .tablewrap {
+    overflow-x: auto; border: 1px solid var(--line); border-radius: 9px;
+    scrollbar-width: thin; scrollbar-color: var(--muted) var(--line);
+  }
+  /* Keep the horizontal scrollbar visible rather than overlay-hidden. */
+  .tablewrap::-webkit-scrollbar { height: 11px; }
+  .tablewrap::-webkit-scrollbar-thumb { background: var(--muted); border-radius: 6px; }
+  .tablewrap::-webkit-scrollbar-track { background: var(--line); border-radius: 6px; }
+
+  /* width:auto = size to content, so columns don't stretch and the row overflows
+     into a scroll instead of spreading negative space across the viewport. */
+  table { border-collapse: collapse; width: auto; font-size: 12px; }
+  th, td { border-bottom: 1px solid var(--line); padding: 3px 9px; text-align: left; white-space: nowrap; vertical-align: middle; }
+  th { position: sticky; top: 0; background: var(--accent); color: var(--accent-ink); font-weight: 620; cursor: pointer; z-index: 2; }
+  /* the per-column legend row sits above the header; not sticky, so it scrolls away and the header pins */
+  tr.legrow th { position: static; background: var(--panel); color: var(--muted); border-bottom: none; padding: 5px 9px 2px; cursor: default; font-weight: 600; }
+  .chip { display: inline-flex; align-items: center; gap: 3px; margin-right: 8px; font-size: 10.5px; white-space: nowrap; }
+  .sw { display: inline-block; width: 11px; height: 11px; border-radius: 3px; border: 1px solid rgba(0,0,0,.18); flex: none; }
+
+  td a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+  td.title { max-width: 240px; overflow: hidden; text-overflow: ellipsis; }
+  td.remote { text-align: center; font-weight: 700; }
+  td.remote.yes { color: #2f9e44; }
+  td.remote.no { color: #cbd0d8; }
+  td.num { text-align: right; font-variant-numeric: tabular-nums; }
+  td.reason { max-width: 300px; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+  .empty { padding: 30px; text-align: center; color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>Job Search — Profile</h1>
+  <span class="sub">Tune filters &amp; highlights, preview against cached results, save the profile for the CLI.</span>
+</header>
+
+<div class="layout">
+  <aside>
+    <div class="actions">
+      <button class="primary" id="preview">Preview</button>
+      <button id="save">Save profile</button>
+      <button id="download">Download .xlsx</button>
+    </div>
+
+    <fieldset>
+      <legend>Filters</legend>
+      <label class="field-full"><span>Locations (comma-separated)</span>
+        <input type="text" id="locations" placeholder="Boston, New York, Los Angeles"></label>
+      <label class="row"><span>Allow remote anywhere</span><input type="checkbox" id="remote_ok"></label>
+      <label class="row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0"></label>
+      <label class="row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000"></label>
+      <label class="row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05"></label>
+      <label class="row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Highlight thresholds</legend>
+      <label class="row"><span>Salary light ($)</span><input type="number" id="salary_light" min="0" step="1000"></label>
+      <label class="row"><span>Salary strong ($)</span><input type="number" id="salary_strong" min="0" step="1000"></label>
+      <label class="row"><span>Startup max headcount</span><input type="number" id="startup_max" min="0"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Recency (days)</legend>
+      <label class="row"><span>Fresh ≤</span><input type="number" id="fresh" min="0"></label>
+      <label class="row"><span>Recent ≤</span><input type="number" id="recent" min="0"></label>
+      <label class="row"><span>Aging ≤</span><input type="number" id="aging" min="0"></label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Estimator</legend>
+      <label class="row"><span>Estimate pay when none posted</span><input type="checkbox" id="estimate_salary"></label>
+    </fieldset>
+  </aside>
+
+  <main>
+    <div class="status" id="status">Loading profile…</div>
+    <div class="tablewrap"><div class="empty" id="table">Press <b>Preview</b> to apply the profile to your cached results.</div></div>
+  </main>
+</div>
+
+<script>
+const $ = id => document.getElementById(id);
+let sortState = { col: -1, dir: 1 };
+let last = null;
+
+function populate(p) {
+  $('locations').value = (p.filters.locations || []).join(', ');
+  $('remote_ok').checked = p.filters.remote_ok;
+  $('max_age_days').value = p.filters.max_age_days;
+  $('min_salary').value = p.filters.min_salary;
+  $('min_score').value = p.filters.min_score;
+  $('include_ghosts').checked = p.filters.include_ghosts;
+  $('salary_light').value = p.highlight.salary_light;
+  $('salary_strong').value = p.highlight.salary_strong;
+  $('startup_max').value = p.highlight.startup_max;
+  $('fresh').value = p.highlight.recency_fresh_days;
+  $('recent').value = p.highlight.recency_recent_days;
+  $('aging').value = p.highlight.recency_aging_days;
+  $('estimate_salary').checked = p.estimate_salary;
+}
+
+function collect() {
+  const n = id => Number($(id).value);
+  const c = id => $(id).checked;
+  return {
+    filters: {
+      locations: $('locations').value.split(',').map(s => s.trim()).filter(Boolean),
+      remote_ok: c('remote_ok'), max_age_days: n('max_age_days'),
+      min_salary: n('min_salary'), min_score: n('min_score'), include_ghosts: c('include_ghosts'),
+    },
+    highlight: {
+      salary_light: n('salary_light'), salary_strong: n('salary_strong'), startup_max: n('startup_max'),
+      recency_fresh_days: n('fresh'), recency_recent_days: n('recent'), recency_aging_days: n('aging'),
+    },
+    estimate_salary: c('estimate_salary'),
+  };
+}
+
+function setStatus(msg, err) { const s = $('status'); s.textContent = msg; s.className = 'status' + (err ? ' err' : ''); }
+
+function esc(s) { return (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;'); }
+function isNumericCol(name) {
+  return ['company_size', 'years_experience', 'salary_min', 'salary_max', 'salary_est_min', 'salary_est_max', 'score', 'applicants'].includes(name);
+}
+function fmt(name, v) {
+  if (v === '' || v == null) return '';
+  if (name.startsWith('salary')) { const n = Number(v); return isNaN(n) ? esc(v) : '$' + n.toLocaleString(); }
+  return esc(v);
+}
+
+// Column-specific colour legends, sitting above the column they explain. Labels
+// reflect the current threshold inputs.
+function chip(hex, label) { return `<span class="chip"><span class="sw" style="background:#${hex}"></span>${label}</span>`; }
+function legendChips(col) {
+  const n = id => Number($(id).value);
+  const k = v => '$' + Math.round(v / 1000) + 'k';
+  if (col === 'company') return chip('FFE699', 'F500') + chip('9BC2E6', 'Software') + chip('D9C2E9', 'Startup');
+  if (col === 'salary_min') return chip('E2EFDA', '≥' + k(n('salary_light'))) + chip('A9D08E', '≥' + k(n('salary_strong')));
+  if (col === 'posted') return chip('92D050', '≤' + n('fresh') + 'd') + chip('FFEB9C', '≤' + n('recent') + 'd') + chip('FFC000', '≤' + n('aging') + 'd') + chip('FF9999', '>' + n('aging') + 'd');
+  return '';
+}
+
+function render() {
+  if (!last) return;
+  const { columns, rows } = last;
+  if (!rows.length) { $('table').outerHTML = '<div class="empty" id="table">No listings match this profile.</div>'; return; }
+
+  const idxTitle = columns.indexOf('title');
+  const body = rows.map(r => {
+    const tds = r.cells.map((cell, i) => {
+      const name = columns[i];
+      const bg = cell.fill ? ` style="background:#${cell.fill}"` : '';
+      let val = fmt(name, cell.value), cls = '', attr = '';
+      if (i === idxTitle) {
+        cls = 'title'; attr = ` title="${esc(cell.value)}"`;
+        if (r.url) val = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${val}</a>`;
+      } else if (name === 'remote') {
+        const yes = cell.value === 'true';
+        val = yes ? '✓' : (cell.value === 'false' ? '✗' : '');
+        cls = 'remote ' + (yes ? 'yes' : 'no');
+      } else if (name === 'reasoning') {
+        cls = 'reason'; attr = ` title="${esc(cell.value)}"`;
+      } else if (isNumericCol(name)) {
+        cls = 'num';
+      }
+      return `<td class="${cls}"${attr}${bg}>${val}</td>`;
+    }).join('');
+    return `<tr>${tds}</tr>`;
+  }).join('');
+
+  const legrow = columns.map(c => `<th class="legcell">${legendChips(c)}</th>`).join('');
+  const head = columns.map((c, i) => `<th data-col="${i}">${c}</th>`).join('');
+  $('table').outerHTML = `<table id="table"><thead><tr class="legrow">${legrow}</tr><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  document.querySelectorAll('#table thead tr:last-child th').forEach(th =>
+    th.addEventListener('click', () => sortBy(Number(th.dataset.col))));
+}
+
+function sortBy(col) {
+  sortState.dir = sortState.col === col ? -sortState.dir : 1;
+  sortState.col = col;
+  const num = isNumericCol(last.columns[col]);
+  last.rows.sort((a, b) => {
+    let x = a.cells[col].value, y = b.cells[col].value;
+    if (num) { return ((Number(x) || 0) - (Number(y) || 0)) * sortState.dir; }
+    return x.localeCompare(y) * sortState.dir;
+  });
+  render();
+}
+
+async function preview() {
+  setStatus('Filtering cached results…');
+  try {
+    const res = await fetch('/api/preview', { method: 'POST', body: JSON.stringify(collect()) });
+    if (!res.ok) throw new Error(await res.text());
+    last = await res.json();
+    sortState = { col: -1, dir: 1 };
+    render();
+    $('status').innerHTML = `<span class="count">${last.kept}</span> of ${last.total} verified listings match.`;
+    $('status').className = 'status';
+  } catch (e) { setStatus(e.message, true); }
+}
+
+async function save() {
+  setStatus('Saving profile…');
+  try {
+    const res = await fetch('/api/profile', { method: 'POST', body: JSON.stringify(collect()) });
+    if (!res.ok) throw new Error(await res.text());
+    const j = await res.json();
+    setStatus('Saved to ' + j.saved + '  —  run:  jobsearch --profile ' + j.saved);
+  } catch (e) { setStatus(e.message, true); }
+}
+
+async function download() {
+  setStatus('Building .xlsx…');
+  try {
+    const res = await fetch('/api/download', { method: 'POST', body: JSON.stringify(collect()) });
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob); a.download = 'results.xlsx'; a.click();
+    URL.revokeObjectURL(a.href);
+    setStatus('Downloaded results.xlsx');
+  } catch (e) { setStatus(e.message, true); }
+}
+
+$('preview').addEventListener('click', preview);
+$('save').addEventListener('click', save);
+$('download').addEventListener('click', download);
+
+fetch('/api/profile').then(r => r.json()).then(p => {
+  populate(p);
+  preview();
+}).catch(e => setStatus('Could not load profile: ' + e.message, true));
+</script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+# A search profile: the filters and highlight thresholds that shape a run.
+# Edit by hand or via the GUI. jobsearch and render both read it with --profile.
+# Any field left out falls back to the built-in default.
+
+filters:
+  locations: [Boston, New York, Los Angeles]  # keep listings matching any of these
+  remote_ok: true                             # also keep remote roles anywhere
+  max_age_days: 90                            # drop postings older than ~3 months
+  min_salary: 160000                          # drop max pay (posted, else estimated) below this
+  min_score: 0.0                              # drop listings scoring below this (0..1)
+  include_ghosts: false                       # keep likely-ghost listings
+
+highlight:
+  salary_light: 165000        # salary max at/above this: light-green cell
+  salary_strong: 180000       # salary max at/above this: strong-green cell
+  startup_max: 200            # headcount below this (and > 0): startup badge
+  recency_fresh_days: 7       # posted within this: freshest colour
+  recency_recent_days: 30     # posted within this: recent colour
+  recency_aging_days: 90      # posted within this: aging colour; older is stale
+
+estimate_salary: true         # count/show heuristic pay estimates when none is posted

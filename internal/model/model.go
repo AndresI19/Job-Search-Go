@@ -18,6 +18,8 @@ type Listing struct {
 	Title            string
 	Company          string
 	CompanyURL       string // canonical company handle — the verification join key
+	CompanySize      int    // company headcount; 0 when unknown — a startup signal
+	Industries       string // LinkedIn industry classification, e.g. "Software Development"
 	Location         string
 	Remote           bool
 	Posted           time.Time // zero value when unknown
@@ -25,6 +27,8 @@ type Listing struct {
 	YearsExperience  int       // minimum years the posting asks for; 0 when not stated
 	SalaryMin        int       // annual USD; 0 when the source gives no salary
 	SalaryMax        int       // annual USD; 0 when the source gives no salary
+	SalaryEstMin     int       // heuristic annual USD estimate; set only when the source gives no salary
+	SalaryEstMax     int       // heuristic annual USD estimate; set only when the source gives no salary
 	ApplyType        string    // "easy_apply", "external", or "" when unknown
 	ExternalApplyURL string    // set when ApplyType == "external"
 	URL              string    // canonical posting URL
