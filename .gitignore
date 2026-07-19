@@ -31,7 +31,6 @@ go.work.sum
 # .idea/
 # .vscode/
 bin/
-results.csv
+results*.csv
 *.log
-results.xlsx
-results_enriched.csv
+results*.xlsx

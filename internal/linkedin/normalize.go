@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AndresI19/Job-Search-Go/internal/ats"
+	"github.com/AndresI19/Job-Search-Go/internal/comp"
 	"github.com/AndresI19/Job-Search-Go/internal/model"
 )
 
@@ -19,18 +20,21 @@ const Source = "apify-linkedin"
 
 // record is the subset of an Actor dataset item this adapter reads.
 type record struct {
-	ID              string `json:"id"`
-	Link            string `json:"link"`
-	Title           string `json:"title"`
-	CompanyName     string `json:"companyName"`
-	CompanyURL      string `json:"companyLinkedinUrl"`
-	Location        string `json:"location"`
-	PostedAt        string `json:"postedAt"`
-	ApplicantsCount string `json:"applicantsCount"`
-	ApplyURL        string `json:"applyUrl"`
-	Salary          string `json:"salary"`
-	DescriptionText string `json:"descriptionText"`
-	DescriptionHTML string `json:"descriptionHtml"`
+	ID                    string `json:"id"`
+	Link                  string `json:"link"`
+	Title                 string `json:"title"`
+	CompanyName           string `json:"companyName"`
+	CompanyURL            string `json:"companyLinkedinUrl"`
+	Location              string `json:"location"`
+	PostedAt              string `json:"postedAt"`
+	ApplicantsCount       string `json:"applicantsCount"`
+	ApplyURL              string `json:"applyUrl"`
+	Salary                string `json:"salary"`
+	CompanyEmployeesCount int    `json:"companyEmployeesCount"`
+	Industries            string `json:"industries"`
+	SeniorityLevel        string `json:"seniorityLevel"`
+	DescriptionText       string `json:"descriptionText"`
+	DescriptionHTML       string `json:"descriptionHtml"`
 }
 
 // Normalize maps raw Actor dataset items (the []RawMessage from apify.Client.Run)
@@ -48,12 +52,20 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 		}
 		salMin, salMax := parseSalary(r.Salary)
 		desc := description(r)
+		// Estimate pay only when the posting gives none, so a blank salary
+		// doesn't hide a strong role — never overriding a real published figure.
+		estMin, estMax := 0, 0
+		if salMin == 0 && salMax == 0 {
+			estMin, estMax = comp.Estimate(r.Title, r.SeniorityLevel, r.Location)
+		}
 		out = append(out, model.Listing{
 			Source:           Source,
 			JobID:            r.ID,
 			Title:            r.Title,
 			Company:          r.CompanyName,
 			CompanyURL:       r.CompanyURL,
+			CompanySize:      r.CompanyEmployeesCount,
+			Industries:       r.Industries,
 			Location:         r.Location,
 			Remote:           isRemote(r.Location, desc),
 			Posted:           parseDate(r.PostedAt),
@@ -61,6 +73,8 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			YearsExperience:  parseYears(desc),
 			SalaryMin:        salMin,
 			SalaryMax:        salMax,
+			SalaryEstMin:     estMin,
+			SalaryEstMax:     estMax,
 			ApplyType:        applyType,
 			ExternalApplyURL: r.ApplyURL,
 			URL:              r.Link,

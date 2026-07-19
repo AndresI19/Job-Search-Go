@@ -1,0 +1,148 @@
+# Curated list of software companies with strong engineering reputations that
+# are known to pay above IBM (a mid-tier benchmark) — used to emphasize good
+# software employers that are NOT Fortune 500. Overlap with the F500 list is
+# fine; F500 takes colour priority. Names are normalized before matching, so
+# "Stripe, Inc." matches "Stripe". Curated and opinionated — tune freely.
+# Blank lines and #-comments are ignored.
+
+# --- top public software / high-comp ---
+Netflix
+Nvidia
+Adobe
+Salesforce
+Snowflake
+Datadog
+Palantir Technologies
+Cloudflare
+MongoDB
+Atlassian
+ServiceNow
+Workday
+Okta
+Zscaler
+CrowdStrike
+Palo Alto Networks
+Fortinet
+Confluent
+Elastic
+GitLab
+HashiCorp
+Twilio
+DoorDash
+Airbnb
+Uber
+Lyft
+Instacart
+Coinbase
+Robinhood
+Block
+Affirm
+SoFi
+Toast
+Roblox
+Unity
+Pinterest
+Snap
+Reddit
+Spotify
+Zoom
+DocuSign
+Dropbox
+Box
+Asana
+Samsara
+Roku
+Coupang
+Sea
+Shopify
+Squarespace
+Wix
+Bill.com
+Klaviyo
+HubSpot
+Zendesk
+Freshworks
+Nutanix
+Pure Storage
+Dynatrace
+Gitlab
+Cloudera
+Teradata
+Splunk
+
+# --- private / unicorns known for strong pay ---
+Stripe
+Databricks
+Docker
+Canva
+Figma
+Notion
+Airtable
+Retool
+Vercel
+Netlify
+Supabase
+PlanetScale
+Cockroach Labs
+Temporal Technologies
+dbt Labs
+Fivetran
+Airbyte
+Hex Technologies
+Ramp
+Brex
+Plaid
+Chime
+Gusto
+Rippling
+Deel
+Mercury
+Modern Treasury
+Scale AI
+OpenAI
+Anthropic
+Cohere
+Hugging Face
+Mistral AI
+Discord
+Grammarly
+Miro
+Amplitude
+Postman
+Segment
+Census
+Linear
+Sourcegraph
+Replit
+Render
+Fly.io
+Neon
+ClickHouse
+Grafana Labs
+Redpanda
+Materialize
+Warp
+Rippling
+Notion Labs
+Ashby
+Gem
+Rippling
+Vanta
+Wiz
+Snyk
+Chainalysis
+Ramp Business
+Faire
+Flexport
+Nuro
+Cruise
+Waymo
+Rivian
+Lucid Motors
+SpaceX
+Anduril
+Ramp Financial
+Airtable
+Benchling
+Verkada
+Rippling HR

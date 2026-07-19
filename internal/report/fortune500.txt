@@ -237,12 +237,6 @@ Twilio
 Cloudflare
 DoorDash
 Airbnb
-Coinbase
-Robinhood
-Reddit
-Pinterest
-Snap
-Spotify
 Zoom
 Dropbox
 Roku

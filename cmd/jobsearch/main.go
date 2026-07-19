@@ -21,6 +21,7 @@ import (
 
 	"github.com/AndresI19/Job-Search-Go/internal/apify"
 	"github.com/AndresI19/Job-Search-Go/internal/ats"
+	"github.com/AndresI19/Job-Search-Go/internal/filter"
 	"github.com/AndresI19/Job-Search-Go/internal/greenhouse"
 	"github.com/AndresI19/Job-Search-Go/internal/judge"
 	"github.com/AndresI19/Job-Search-Go/internal/lever"
@@ -28,6 +29,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/model"
 	"github.com/AndresI19/Job-Search-Go/internal/output"
 	"github.com/AndresI19/Job-Search-Go/internal/pipeline"
+	"github.com/AndresI19/Job-Search-Go/internal/profile"
 	"github.com/AndresI19/Job-Search-Go/internal/score"
 	"github.com/AndresI19/Job-Search-Go/internal/watchlist"
 )
@@ -49,14 +51,44 @@ func run() error {
 	workers := flag.Int("workers", 8, "max listings verified concurrently")
 	count := flag.Int("count", 25, "listings to scrape per query (Actor minimum 10)")
 	sources := flag.String("sources", "", "comma-separated ATS sources to verify against (overrides the watch-list)")
-	minScore := flag.Float64("min-score", 0, "only write listings scoring at least this (0..1)")
-	location := flag.String("location", "", "keep only listings whose location matches this (e.g. remote, Boston)")
-	includeGhosts := flag.Bool("include-ghosts", false, "include likely-ghost listings (dropped by default)")
+	minScore := flag.Float64("min-score", 0, "override the profile's min score (0..1)")
+	minSalary := flag.Int("min-salary", 160000, "override the profile's salary floor; 0 disables")
+	location := flag.String("location", "", "override the profile's locations (comma-separated, e.g. remote,Boston)")
+	includeGhosts := flag.Bool("include-ghosts", false, "override the profile to include likely-ghost listings")
+	profPath := flag.String("profile", "", "filter/highlight profile YAML (default: built-in defaults)")
+	cache := flag.String("cache", "", "full verified-result cache for the GUI (default: derived from --out)")
 	verbose := flag.Bool("verbose", false, "debug-level logging")
 	flag.Parse()
 
 	if *watch == "" {
 		return fmt.Errorf("--watch is required")
+	}
+
+	// The profile is the source of the filter settings; any explicitly-passed
+	// filter flag overrides its field, so the CLI stays scriptable.
+	prof := profile.Default()
+	if *profPath != "" {
+		p, err := profile.Load(*profPath)
+		if err != nil {
+			return err
+		}
+		prof = p
+	}
+	flag.Visit(func(fl *flag.Flag) {
+		switch fl.Name {
+		case "location":
+			prof.Filters.Locations = splitCSV(*location)
+		case "min-score":
+			prof.Filters.MinScore = *minScore
+		case "min-salary":
+			prof.Filters.MinSalary = *minSalary
+		case "include-ghosts":
+			prof.Filters.IncludeGhosts = *includeGhosts
+		}
+	})
+	cachePath := *cache
+	if cachePath == "" && *out != "" {
+		cachePath = strings.TrimSuffix(*out, ".csv") + ".cache.csv"
 	}
 	token := os.Getenv("APIFY_TOKEN")
 	if token == "" {
@@ -139,11 +171,23 @@ func run() error {
 
 	logger.Info("verifying", "listings", len(listings), "workers", *workers)
 	results := pipeline.Verify(ctx, listings, resolver, jd, score.DefaultWeights(), *workers, logger)
-	results = atLeast(results, *minScore)
-	results = matchLocation(results, *location)
-	if !*includeGhosts {
-		results = dropGhosts(results)
+
+	// The full verified set is cached so the GUI can re-filter it for free; the
+	// display CSV is that set narrowed by the profile's filters.
+	if cachePath != "" {
+		cf, err := os.Create(cachePath)
+		if err != nil {
+			return err
+		}
+		err = output.WriteCSV(cf, results)
+		cf.Close()
+		if err != nil {
+			return err
+		}
+		logger.Info("wrote verified cache", "path", cachePath, "listings", len(results))
 	}
+
+	rows := filter.Apply(output.Header(), output.Rows(results), prof.Filters, prof.EstimateSalary, now)
 
 	w := os.Stdout
 	if *out != "" {
@@ -154,7 +198,7 @@ func run() error {
 		defer f.Close()
 		w = f
 	}
-	if err := output.WriteCSV(w, results); err != nil {
+	if err := output.WriteRows(w, rows); err != nil {
 		return err
 	}
 	if limited {
@@ -196,54 +240,6 @@ func buildResolver(wl *watchlist.Watchlist, override []string) *ats.Resolver {
 		sources = append(sources, ats.NewCached(lever.New()))
 	}
 	return ats.NewResolver(sources...)
-}
-
-// atLeast keeps only results scoring at or above min (already sorted best-first).
-func atLeast(results []model.Result, min float64) []model.Result {
-	if min <= 0 {
-		return results
-	}
-	kept := results[:0]
-	for _, r := range results {
-		if r.Verdict.Score >= min {
-			kept = append(kept, r)
-		}
-	}
-	return kept
-}
-
-// dropGhosts removes listings the verdict flags as likely-ghost, keeping the
-// real and uncertain ones — the roles actually worth a look.
-func dropGhosts(results []model.Result) []model.Result {
-	kept := results[:0]
-	for _, r := range results {
-		if r.Verdict.Confidence != model.LikelyGhost {
-			kept = append(kept, r)
-		}
-	}
-	return kept
-}
-
-// matchLocation keeps results whose location matches any of the comma-separated
-// filter terms (case-insensitive substring). The term "remote" also matches
-// listings flagged remote — so "Boston,New York,Los Angeles,remote" keeps those
-// three metros plus any remote role.
-func matchLocation(results []model.Result, filter string) []model.Result {
-	terms := splitCSV(strings.ToLower(filter))
-	if len(terms) == 0 {
-		return results
-	}
-	kept := results[:0]
-	for _, r := range results {
-		loc := strings.ToLower(r.Listing.Location)
-		for _, t := range terms {
-			if strings.Contains(loc, t) || (t == "remote" && r.Listing.Remote) {
-				kept = append(kept, r)
-				break
-			}
-		}
-	}
-	return kept
 }
 
 // splitCSV parses a comma-separated flag into trimmed, non-empty values.
