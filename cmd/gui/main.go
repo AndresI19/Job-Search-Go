@@ -96,27 +96,43 @@ func (j *jobState) snapshot() map[string]any {
 	return m
 }
 
-// suiteSize is how many jobs one run processes — a small, bounded batch.
-const suiteSize = 10
+const (
+	suiteSize   = 10    // default jobs per run when the request names none
+	maxJobCount = 10000 // hard ceiling on a run's job count
+)
+
+// runReq is a run's POST body: the profile plus the requested job count.
+type runReq struct {
+	profile.Profile
+	JobCount int `json:"job_count"`
+}
 
 // run starts a search (POST) or reports a running one's progress (GET ?id=).
 func (s *server) run(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		p, err := decodeProfile(r)
-		if err != nil {
+		req := runReq{Profile: profile.Default(), JobCount: suiteSize}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httpErr(w, err)
 			return
 		}
+		count := req.JobCount
+		if count < 1 {
+			count = suiteSize
+		} else if count > maxJobCount {
+			count = maxJobCount
+		}
+		p := req.Profile
 		header, data, err := s.loadCache()
 		if err != nil {
 			httpErr(w, err)
 			return
 		}
-		// The suite is the profile's filtered listings, capped at suiteSize.
+		// The suite is the profile's filtered listings, capped at the job count
+		// (and, for this mock, by however many cached rows exist to replay).
 		rows := filter.Apply(header, data, p.Filters, p.EstimateSalary, time.Now())
-		if len(rows) > suiteSize {
-			rows = rows[:suiteSize]
+		if len(rows) > count {
+			rows = rows[:count]
 		}
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
@@ -150,8 +166,19 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 // body with ingest → verify calls that drive the same jobState fields.
 func runMock(j *jobState, rows [][]string) {
 	n := len(rows)
+	// Pace each phase to roughly a few seconds regardless of n, so a large suite
+	// still animates rather than crawling.
+	pause := 350 * time.Millisecond
+	if n > 0 {
+		if p := time.Duration(3500/n) * time.Millisecond; p < pause {
+			pause = p
+		}
+		if pause < 40*time.Millisecond {
+			pause = 40 * time.Millisecond
+		}
+	}
 	for i := 1; i <= n; i++ { // Apify scrape: item count climbs as it "scrapes".
-		time.Sleep(350 * time.Millisecond)
+		time.Sleep(pause)
 		j.mu.Lock()
 		j.apifyDone = i
 		j.rateUsed += 0.002 // per-result cost, mocked
@@ -161,7 +188,7 @@ func runMock(j *jobState, rows [][]string) {
 	j.phase = "verify"
 	j.mu.Unlock()
 	for i := 1; i <= n; i++ { // post-process: ATS + Claude verdict, per listing.
-		time.Sleep(300 * time.Millisecond)
+		time.Sleep(pause)
 		j.mu.Lock()
 		j.verifyDone = i
 		j.mu.Unlock()

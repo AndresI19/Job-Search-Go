@@ -270,10 +270,36 @@ type PRow struct {
 	Cells []PCell `json:"cells"`
 }
 
+// gradPalette maps a numeric column to the [low, high] hex endpoints its cells
+// are shaded between, by where the value falls in the dataset's min..max range.
+var gradPalette = map[string][2]string{
+	"score":        {"F4A6A6", "A9D08E"}, // red (low confidence) → green (high)
+	"applicants":   {"DEEBF7", "9DC3E6"}, // pale → medium blue
+	"company_size": {"FCE4D6", "F4B183"}, // pale → medium orange
+}
+
+type gradSpec struct {
+	lo, hi float64
+	pal    [2]string
+}
+
 // Preview applies the same colour rules as WriteXLSX and returns a table for the
-// GUI: the visible column names and, per row, a cell per column.
+// GUI. In addition it shades the numeric columns in gradPalette on a gradient
+// scaled to the dataset's own min..max, so a value reads relative to its peers.
 func Preview(header []string, rows [][]string, cfg Config, now time.Time) (columns []string, table []PRow) {
 	cl := newCols(header)
+
+	grad := map[int]gradSpec{}
+	for name, pal := range gradPalette {
+		c := colIndex(header, name)
+		if c < 0 {
+			continue
+		}
+		if lo, hi, ok := colRange(rows, c); ok && hi > lo {
+			grad[c] = gradSpec{lo, hi, pal}
+		}
+	}
+
 	var vis []int
 	for c, h := range header {
 		if !cfg.skip(h) {
@@ -284,11 +310,77 @@ func Preview(header []string, rows [][]string, cfg Config, now time.Time) (colum
 	for _, row := range rows {
 		pr := PRow{URL: trimURL(strOf(row, cl.url)), Cells: make([]PCell, 0, len(vis))}
 		for _, c := range vis {
-			pr.Cells = append(pr.Cells, PCell{Value: strOf(row, c), Fill: cfg.fillFor(c, row, cl, now)})
+			fill := cfg.fillFor(c, row, cl, now)
+			if gs, ok := grad[c]; ok {
+				if s := strOf(row, c); s != "" {
+					if v, err := strconv.ParseFloat(s, 64); err == nil {
+						fill = gradientHex(v, gs)
+					}
+				}
+			}
+			pr.Cells = append(pr.Cells, PCell{Value: strOf(row, c), Fill: fill})
 		}
 		table = append(table, pr)
 	}
 	return columns, table
+}
+
+func colIndex(header []string, name string) int {
+	for i, h := range header {
+		if strings.EqualFold(h, name) {
+			return i
+		}
+	}
+	return -1
+}
+
+// colRange is the min and max of the numeric values in column c across rows.
+func colRange(rows [][]string, c int) (min, max float64, ok bool) {
+	for _, r := range rows {
+		s := strOf(r, c)
+		if s == "" {
+			continue
+		}
+		v, err := strconv.ParseFloat(s, 64)
+		if err != nil {
+			continue
+		}
+		if !ok {
+			min, max, ok = v, v, true
+			continue
+		}
+		if v < min {
+			min = v
+		}
+		if v > max {
+			max = v
+		}
+	}
+	return min, max, ok
+}
+
+// gradientHex interpolates the palette between lo and hi at v's position.
+func gradientHex(v float64, gs gradSpec) string {
+	t := (v - gs.lo) / (gs.hi - gs.lo)
+	if t < 0 {
+		t = 0
+	} else if t > 1 {
+		t = 1
+	}
+	ar, ag, ab := hexRGB(gs.pal[0])
+	br, bg, bb := hexRGB(gs.pal[1])
+	lerp := func(a, b int) int { return int(float64(a) + (float64(b)-float64(a))*t + 0.5) }
+	return fmt.Sprintf("%02X%02X%02X", lerp(ar, br), lerp(ag, bg), lerp(ab, bb))
+}
+
+func hexRGB(h string) (r, g, b int) {
+	if len(h) != 6 {
+		return 0, 0, 0
+	}
+	ri, _ := strconv.ParseInt(h[0:2], 16, 0)
+	gi, _ := strconv.ParseInt(h[2:4], 16, 0)
+	bi, _ := strconv.ParseInt(h[4:6], 16, 0)
+	return int(ri), int(gi), int(bi)
 }
 
 func isSalaryCol(name string) bool {
