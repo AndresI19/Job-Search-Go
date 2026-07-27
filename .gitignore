@@ -32,5 +32,13 @@ go.work.sum
 # .vscode/
 bin/
 results*.csv
+# …except the verified-results dataset the deployed service serves as its public,
+# sign-in-free mock/preview. It is shipped in the image, so it must be committed.
+!results.cache.csv
 *.log
 results*.xlsx
+
+# Frontend (Vite + @platform/ui): installed deps and the build output. web/dist is
+# produced by `vite build` in CI and the Docker image, never committed.
+node_modules/
+web/dist/

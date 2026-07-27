@@ -1,0 +1,4 @@
+[submodule "web/vendor/project-platform"]
+	path = web/vendor/project-platform
+	url = https://github.com/AndresI19/project-platform.git
+	branch = main

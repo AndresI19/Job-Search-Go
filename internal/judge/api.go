@@ -6,26 +6,37 @@ import (
 	"strings"
 
 	anthropic "github.com/anthropics/anthropic-sdk-go"
+	"github.com/anthropics/anthropic-sdk-go/option"
 
 	"github.com/AndresI19/Job-Search-Go/internal/model"
+	"github.com/AndresI19/Job-Search-Go/internal/secret"
 )
 
 // APIJudge evaluates by calling the Anthropic Messages API directly with an API
-// key (ANTHROPIC_API_KEY). It is metered per token rather than drawing on a
-// Claude subscription; prefer it for higher-throughput runs.
+// key. It is metered per token rather than drawing on a Claude subscription;
+// this is the in-cluster backend, where a pod has no Claude Code login for the
+// CLI judge to reuse. Local dev keeps using the CLI judge.
 type APIJudge struct {
 	client anthropic.Client
 	model  anthropic.Model
 }
 
-// NewAPIJudge returns an APIJudge for the given model id, reading
-// ANTHROPIC_API_KEY from the environment.
+// NewAPIJudge returns an APIJudge for the given model id. The API key is resolved
+// via secret.Value: ANTHROPIC_API_KEY env first (local), else the mounted file
+// (ANTHROPIC_API_KEY_FILE, default /etc/.secrets/anthropic-api-key) — so
+// in-cluster the key is read from a read-only secret mount and never placed in the
+// process environment. When resolved from a file it is passed explicitly with
+// option.WithAPIKey; when it comes from the env the SDK's own default picks it up.
 func NewAPIJudge(modelID string) (*APIJudge, error) {
 	if modelID == "" {
 		modelID = defaultModel
 	}
+	var opts []option.RequestOption
+	if key := secret.Value("ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY_FILE", "/etc/.secrets/anthropic-api-key"); key != "" {
+		opts = append(opts, option.WithAPIKey(key))
+	}
 	return &APIJudge{
-		client: anthropic.NewClient(),
+		client: anthropic.NewClient(opts...),
 		model:  anthropic.Model(modelID),
 	}, nil
 }

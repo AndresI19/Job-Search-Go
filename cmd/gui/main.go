@@ -18,6 +18,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
 	"sync"
@@ -26,6 +27,7 @@ import (
 
 	"github.com/AndresI19/Job-Search-Go/internal/apify"
 	"github.com/AndresI19/Job-Search-Go/internal/ats"
+	"github.com/AndresI19/Job-Search-Go/internal/auth"
 	"github.com/AndresI19/Job-Search-Go/internal/filter"
 	"github.com/AndresI19/Job-Search-Go/internal/greenhouse"
 	"github.com/AndresI19/Job-Search-Go/internal/judge"
@@ -36,6 +38,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/profile"
 	"github.com/AndresI19/Job-Search-Go/internal/report"
 	"github.com/AndresI19/Job-Search-Go/internal/score"
+	"github.com/AndresI19/Job-Search-Go/internal/secret"
 	"github.com/AndresI19/Job-Search-Go/internal/watchlist"
 )
 
@@ -47,35 +50,89 @@ var indexHTML []byte
 const defaultLinkedInActor = "hKByXkMQaC5Qt9UMN"
 
 func main() {
-	addr := flag.String("addr", "localhost:8080", "listen address")
-	profPath := flag.String("profile", "profile.yaml", "profile YAML to load and save")
-	cachePath := flag.String("cache", "results.cache.csv", "verified-result cache to preview against")
+	// Flags stay for local use; each falls back to an env var so the container can
+	// configure the same knobs the platform way (the service chart sets env, not
+	// args). ADDR must be 0.0.0.0:<port> in a pod — the localhost default would
+	// refuse traffic arriving from the Service.
+	addr := flag.String("addr", envOr("ADDR", "localhost:8080"), "listen address")
+	profPath := flag.String("profile", envOr("PROFILE_PATH", "profile.yaml"), "profile YAML to load and save")
+	cachePath := flag.String("cache", envOr("CACHE_PATH", "results.cache.csv"), "verified-result cache to preview against")
 	flag.Parse()
 
-	s := &server{profPath: *profPath, cachePath: *cachePath, jobs: map[string]*jobState{}}
+	base := normBase(os.Getenv("BASE_PATH"))
+	s := &server{
+		profPath: *profPath, cachePath: *cachePath, base: base,
+		appVersion: readVersion(), jobs: map[string]*jobState{},
+	}
+
+	// Platform identity. In-cluster (AUTH_JWKS_URI set) admin is a verified signed
+	// JWT claim; unset means local dev, where the corner-switch role is trusted
+	// instead. A configured-but-unreachable JWKS returns a deny-all verifier (and
+	// an error we log) rather than nil, so we never silently fall back to the
+	// spoofable local path when auth was actually requested.
+	v, err := auth.FromEnv(context.Background())
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "auth: JWKS load failed — real (admin) runs are locked until platform-auth is reachable and the pod restarts: %v\n", err)
+	}
+	s.auth = v
+
 	// Wire the real pipeline if the environment allows it. Runs pick mock vs real
-	// per request from the corner profile switch (Guest=mock, Admin=real); this
-	// just makes the real path AVAILABLE. Best-effort — without it, Admin falls
-	// back to the mock rather than the server failing to start.
+	// per request; this just makes the real path AVAILABLE. Best-effort — without
+	// it, a real request falls back to the mock rather than the server failing.
 	if err := s.enableLive(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: Admin (real) runs unavailable — %v; Admin will fall back to mock\n", err)
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", s.index)
-	mux.HandleFunc("/api/config", s.config)
-	mux.HandleFunc("/api/profile", s.profile)
-	mux.HandleFunc("/api/preview", s.preview)
-	mux.HandleFunc("/api/download", s.download)
-	mux.HandleFunc("/api/run", s.run)
-	mux.HandleFunc("/api/export", s.export)
-	mux.HandleFunc("/api/import", s.importResults)
+	mux.HandleFunc(base+"api/config", s.config)
+	mux.HandleFunc(base+"api/profile", s.profile)
+	mux.HandleFunc(base+"api/preview", s.preview)
+	mux.HandleFunc(base+"api/download", s.download)
+	mux.HandleFunc(base+"api/run", s.run)
+	mux.HandleFunc(base+"api/export", s.export)
+	mux.HandleFunc(base+"api/import", s.importResults)
+	mux.HandleFunc(base+"api/health", s.health)
+	mux.HandleFunc(base+"version", s.version)
+	mux.Handle(base, s.static())
 
-	fmt.Printf("job-search GUI: http://%s  (cache=%s, %s)\n", *addr, *cachePath, s.modeLine())
+	fmt.Printf("job-search GUI: http://%s%s  (cache=%s, %s)\n", *addr, base, *cachePath, s.modeLine())
 	if err := http.ListenAndServe(*addr, mux); err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
+}
+
+// normBase normalises BASE_PATH to a leading+trailing-slash prefix ("/" when
+// unset). Every route and the static handler mount beneath it, so the app serves
+// identically at "/" locally and at "/job-searcher/" behind the platform router.
+func normBase(p string) string {
+	if p == "" || p == "/" {
+		return "/"
+	}
+	if !strings.HasPrefix(p, "/") {
+		p = "/" + p
+	}
+	if !strings.HasSuffix(p, "/") {
+		p += "/"
+	}
+	return p
+}
+
+// readVersion returns the deployed version: APP_VERSION env, else the VERSION file
+// the Docker build writes (/app/VERSION), else "" — a dev build, reported as
+// "snapshot" so it can never claim to be a release.
+func readVersion() string {
+	if v := os.Getenv("APP_VERSION"); v != "" {
+		return v
+	}
+	for _, p := range []string{"/app/VERSION", "VERSION"} {
+		if b, err := os.ReadFile(p); err == nil {
+			if s := strings.TrimSpace(string(b)); s != "" {
+				return s
+			}
+		}
+	}
+	return ""
 }
 
 // modeLine describes, for the startup log, what Guest and Admin runs will do.
@@ -114,7 +171,9 @@ func (s *server) config(w http.ResponseWriter, r *http.Request) {
 // (optional), and the JUDGE_* config (JUDGE_BACKEND=mock keeps it $0 for testing).
 // It also records whether real runs would actually spend (real, non-mock backends).
 func (s *server) enableLive() error {
-	token := os.Getenv("APIFY_TOKEN")
+	// Env first (local / .env), else the mounted secret file (in-cluster), so the
+	// Apify token never has to live in the pod's environment.
+	token := secret.Value("APIFY_TOKEN", "APIFY_TOKEN_FILE", "/etc/.secrets/apify-token")
 	if token == "" {
 		return fmt.Errorf("APIFY_TOKEN is not set")
 	}
@@ -144,6 +203,9 @@ func envOr(key, def string) string {
 
 type server struct {
 	profPath, cachePath string
+	base                string         // normalised BASE_PATH ("/" or "/job-searcher/")
+	appVersion          string         // deployed version, served from <base>version
+	auth                *auth.Verifier // nil = no platform auth (local dev)
 	// Real-run dependencies — nil unless the environment enabled them.
 	realReady bool
 	spends    bool // true only when real runs use real (non-mock) backends
@@ -315,27 +377,22 @@ func fieldQuery(key string) string {
 	return strings.Join(parts, " OR ")
 }
 
-// locationCatalog is the explicitly-supported locations. Each maps a set of
-// raw-location substrings to one label — the location select box, the filter, and
-// the display normalization all key off it, so a place is handled by explicit
-// support rather than an arbitrary heuristic.
+// locationCatalog is the explicitly-supported locations, keyed by STATE. Each maps
+// a set of raw-location substrings to one state label — the location select box, the
+// filter, and the display normalization all key off it. A state matches on its full
+// name, its ", XX" code (comma-prefixed so it can't false-match a city like Tacoma),
+// or any of its metros; all substrings are lowercase (raw values are lowercased
+// before compare).
 var locationCatalog = []struct {
 	Key, Label string
 	Match      []string
 }{
-	{"new-york", "New York", []string{"new york", "nyc", "manhattan", "brooklyn"}},
-	{"boston", "Boston", []string{"boston", "cambridge"}},
-	{"los-angeles", "Los Angeles", []string{"los angeles", "marina del rey", "huntington beach"}},
-	{"san-francisco", "San Francisco", []string{"san francisco", "bay area", "palo alto", "mountain view", "menlo park", "san jose", "silicon valley"}},
-	{"seattle", "Seattle", []string{"seattle", "bellevue", "redmond"}},
-	{"chicago", "Chicago", []string{"chicago"}},
-	{"austin", "Austin", []string{"austin"}},
-	{"denver", "Denver", []string{"denver"}},
-	{"washington-dc", "Washington DC", []string{"washington", "arlington", "baltimore"}},
-	{"atlanta", "Atlanta", []string{"atlanta"}},
+	{"ma", "Massachusetts", []string{"massachusetts", ", ma", "boston", "cambridge", "somerville"}},
+	{"ny", "New York", []string{"new york", ", ny", "nyc", "manhattan", "brooklyn"}},
+	{"ca", "California", []string{"california", ", ca", "los angeles", "san francisco", "bay area", "palo alto", "mountain view", "menlo park", "san jose", "silicon valley", "marina del rey", "huntington beach", "oakland", "san diego"}},
 	// Last, as the catch-all: a country-only "United States" tag (or an explicit
-	// "remote") is a nationwide/remote role, not a metro — so it is handled as such,
-	// only after every specific city above has had its chance to match.
+	// "remote") is a nationwide/remote role, not a state — so it is handled as such,
+	// only after every specific state above has had its chance to match.
 	{"us-remote", "US - Remote", []string{"united states", "usa", "remote", "anywhere"}},
 }
 
@@ -355,9 +412,27 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			count = maxJobCount
 		}
 		p := req.Profile
-		// The corner profile switch picks the path: Admin → the real pipeline (only
-		// when the environment made it available), everyone else → the mock.
-		real := s.realReady && strings.EqualFold(req.Role, "admin")
+		// Admin decision. In-cluster (platform auth configured) it is a verified,
+		// signed JWT claim; locally it falls back to the corner-switch role in the
+		// body. The mock/dataset path stays open to everyone, anonymous included.
+		admin := false
+		if s.auth != nil {
+			admin = s.auth.IsAdmin(r)
+		} else {
+			admin = strings.EqualFold(req.Role, "admin")
+		}
+		// Under configured auth, a request that asked to be real but isn't from an
+		// admin is refused outright, not silently downgraded to the mock — a silent
+		// downgrade hides a permission problem behind a $0 result. 401 nudges the UI
+		// to send a bearer token (or sign in).
+		if s.auth != nil && strings.EqualFold(req.Role, "admin") && !admin {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+			http.Error(w, "sign in as an admin to run a real search", http.StatusUnauthorized)
+			return
+		}
+		// The real pipeline runs only for an admin AND only when the environment
+		// wired it (APIFY_TOKEN etc.); everyone else gets the mock.
+		real := s.realReady && admin
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
 			id: id, spends: real && s.spends, status: "running", phase: "apify",
@@ -528,13 +603,43 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 	s.setLast(j.header, rows)
 }
 
-func (s *server) index(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path != "/" {
-		http.NotFound(w, r)
-		return
+// static serves the web UI beneath base. In production a built Vite frontend is
+// copied into WEB_DIR and served as files — its asset URLs are already baked with
+// BASE_PATH at build time, so they resolve correctly behind the router. With no
+// WEB_DIR (local dev / `go run`), the embedded legacy single-page index.html is
+// served instead, so the binary builds and runs with no frontend build present —
+// the existing local workflow is untouched.
+func (s *server) static() http.Handler {
+	if dir := os.Getenv("WEB_DIR"); dir != "" {
+		if _, err := os.Stat(filepath.Join(dir, "index.html")); err == nil {
+			// Strip the base prefix so paths resolve against the dir root; FileServer
+			// then serves index.html for the base path and assets beneath it.
+			return http.StripPrefix(strings.TrimSuffix(s.base, "/"), http.FileServer(http.Dir(dir)))
+		}
 	}
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	_, _ = w.Write(indexHTML)
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != s.base {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write(indexHTML)
+	})
+}
+
+// health is the Kubernetes probe target (served at <base>api/health).
+func (s *server) health(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, map[string]any{"status": "ok", "realReady": s.realReady})
+}
+
+// version reports the deployed image version (served at <base>version), so the
+// running container can say what it is — "snapshot" for a dev build.
+func (s *server) version(w http.ResponseWriter, r *http.Request) {
+	v := s.appVersion
+	if v == "" {
+		v = "snapshot"
+	}
+	writeJSON(w, map[string]string{"version": v})
 }
 
 // profile GETs the current profile (file, else defaults) or POSTs a new one to

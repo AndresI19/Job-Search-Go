@@ -1,0 +1,82 @@
+# Merge to main → the version-tag job cuts the tag → we hand that version to the platform.
+#
+# NOTHING here runs on the platform's machine. Both jobs run on GitHub's own VMs; the second only
+# POSTs. The self-hosted runner is registered to platform-cicd and to nothing else, so no workflow in
+# this repo — including one in a stranger's fork — can reach it.
+name: release
+
+on:
+  push:
+    branches: [main] # a merge. main is protected, so the checks are already green.
+
+# This does NOT re-tag. version-tag.yml already turns every merge into a tag and is the source of
+# truth for the version scheme. This job DERIVES the version the same way (reads the tag on this
+# commit) and only DISPATCHES — the deploy itself is a job on platform-cicd's runner. It rides the
+# same `push: main` event because a tag pushed by GITHUB_TOKEN does not trigger another workflow.
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+
+      - id: version
+        name: The tag version-tag put on this commit
+        run: |
+          set -euo pipefail
+          # READ the tag, do NOT recompute it — two independent "latest + 1" computations cannot
+          # agree. Wait for version-tag.yml to tag this exact commit, then use precisely that.
+          for i in $(seq 1 40); do
+            git fetch -q --tags origin
+            V="$(git tag --points-at "$GITHUB_SHA" | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+            [ -n "$V" ] && break
+            echo "waiting for version-tag to tag this commit ($i)"; sleep 4
+          done
+          [ -n "${V:-}" ] || { echo "no version tag on $GITHUB_SHA — did version-tag.yml fail?" >&2; exit 1; }
+          echo "version=$V" >> "$GITHUB_OUTPUT"
+          echo "this merge is tagged $V"
+
+      - id: pr
+        name: PR context for this merge
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          # The PR this merge commit came from. `gh` returns [] for a direct push, and every field
+          # then falls back to empty — the deploy message simply omits the PR footer.
+          j="$(gh api "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+                 -H 'Accept: application/vnd.github+json' 2>/dev/null || echo '[]')"
+          {
+            echo "num=$(jq -r '.[0].number // ""' <<<"$j")"
+            echo "url=$(jq -r '.[0].html_url // ""' <<<"$j")"
+            echo "author=$(jq -r '.[0].user.login // ""' <<<"$j")"
+            echo "branch=$(jq -r '.[0].head.ref // ""' <<<"$j")"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Ask the platform to build and deploy
+        env:
+          TOKEN: ${{ secrets.CICD_DISPATCH_TOKEN }}
+          V: ${{ steps.version.outputs.version }}
+          PR: ${{ steps.pr.outputs.num }}
+          PR_URL: ${{ steps.pr.outputs.url }}
+          AUTHOR: ${{ steps.pr.outputs.author }}
+          MERGER: ${{ github.actor }}
+          BRANCH: ${{ steps.pr.outputs.branch }}
+        run: |
+          set -euo pipefail
+          # GITHUB_TOKEN cannot dispatch across repos, so the fine-grained CICD_DISPATCH_TOKEN (scoped
+          # to platform-cicd only) does it. The payload is built with jq so strings are safely quoted.
+          payload="$(jq -n \
+            --arg comps 'job-searcher' \
+            --arg repo "$GITHUB_REPOSITORY" \
+            --arg v "$V" --arg pr "$PR" --arg url "$PR_URL" \
+            --arg author "$AUTHOR" --arg merger "$MERGER" --arg branch "$BRANCH" \
+            '{event_type:"release", client_payload:{
+               components:$comps, repo:$repo, version:$v,
+               pr:$pr, pr_url:$url, author:$author, merger:$merger, branch:$branch}}')"
+          curl -fsS -X POST \
+            -H "Authorization: Bearer $TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            https://api.github.com/repos/AndresI19/platform-cicd/dispatches \
+            -d "$payload"
+          echo "dispatched job-searcher $V (PR ${PR:-none})"

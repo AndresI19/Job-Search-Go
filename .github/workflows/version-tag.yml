@@ -1,0 +1,50 @@
+name: version-tag
+
+# Every merge to main leaves a checkable mark: the git tag IS the release history. The scheme is
+# X.X.X (no leading v); each merge bumps the patch by one.
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # tags are needed to know where we are
+
+      - name: Compute the next version
+        id: bump
+        run: |
+          set -euo pipefail
+          # The latest X.X.X tag. A legacy leading 'v' is tolerated and stripped, so a repo switching
+          # away from the old vX.X.X scheme keeps counting up from where it left off.
+          latest="$(git tag --list | sed -E 's/^v//' | grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -V | tail -1 || true)"
+          if [ -z "$latest" ]; then
+            next="0.1.0" # the first tagged release
+          else
+            IFS=. read -r major minor patch <<< "$latest"
+            next="${major}.${minor}.$((patch + 1))"
+          fi
+          # Never collide with a tag that already exists in either scheme.
+          while git rev-parse -q --verify "refs/tags/$next" >/dev/null 2>&1 \
+             || git rev-parse -q --verify "refs/tags/v$next" >/dev/null 2>&1; do
+            IFS=. read -r major minor patch <<< "$next"
+            next="${major}.${minor}.$((patch + 1))"
+          done
+          echo "next=$next" >> "$GITHUB_OUTPUT"
+          echo "Next tag: $next (previous: ${latest:-none})"
+
+      - name: Create and push the tag
+        env:
+          NEXT: ${{ steps.bump.outputs.next }}
+        run: |
+          set -euo pipefail
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$NEXT"
+          git push origin "$NEXT"

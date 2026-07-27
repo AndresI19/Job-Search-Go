@@ -8,6 +8,8 @@ on:
 permissions:
   contents: read
 
+# @platform/ui is a vendored git submodule (web/vendor/project-platform), needed by the
+# frontend typecheck/build and the Docker build — hence submodules: recursive where used.
 jobs:
   build-test:
     runs-on: ubuntu-latest
@@ -34,3 +36,53 @@ jobs:
 
       - name: test
         run: go test -race ./...
+
+  web:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      # Build with the SAME base path the deploy uses, so CI exercises the real asset URLs.
+      - run: BASE_PATH=/job-searcher/ npm run build
+
+  image-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: Build the image
+        run: docker build --pull --build-arg BASE_PATH=/job-searcher/ -t scan-job-searcher:ci .
+      - name: Trivy scan (HIGH,CRITICAL)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: scan-job-searcher:ci
+          severity: HIGH,CRITICAL
+          exit-code: "1" # blocking: the distroless runtime is hardened to 0 HIGH/CRITICAL
+          ignore-unfixed: true
+
+  dep-scan:
+    runs-on: ubuntu-latest
+    steps:
+      # This gate is the SHIPPED dependencies — the Go module. The npm deps (vite, typescript)
+      # are build-only and never enter the Go-only runtime image, so the frontend lockfile and
+      # the vendored @platform/ui are skipped; image-scan covers everything actually shipped.
+      - uses: actions/checkout@v4
+      - name: Trivy dependency scan (Go module)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln
+          severity: HIGH,CRITICAL
+          exit-code: "1"
+          ignore-unfixed: true
+          skip-dirs: web,node_modules
+          skip-files: package-lock.json

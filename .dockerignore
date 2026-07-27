@@ -1,0 +1,14 @@
+# Keep the build context lean and deterministic. results.cache.csv is deliberately NOT
+# ignored — it is the dataset the runtime image ships and serves as the public mock.
+**/.git
+node_modules
+web/dist
+**/node_modules
+bin
+*.log
+run-full.log
+results.csv
+results_enriched.csv
+results.xlsx
+profile.yaml
+.env
