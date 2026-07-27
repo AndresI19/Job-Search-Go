@@ -4,10 +4,11 @@
      the platform accent flows in instead of drifting. Everything below styles only
      what is specific to this page and reads those shared variables. */
   * { box-sizing: border-box; }
-  /* Corner profile switch — a fake identity toggle (NOT auth) that picks the run
-     mode: Guest = $0 mock, Admin = the real pipeline. */
+  /* The run-mode readout ($0 mock vs LIVE). It sits BELOW the shared @platform/ui
+     account FAB (which is fixed at top:14px / right:14px), so the two no longer
+     overlap in the top-right corner. */
   .idswitch {
-    position: fixed; top: 10px; right: 14px; z-index: 40;
+    position: fixed; top: 66px; right: 14px; z-index: 40;
     display: flex; align-items: center; gap: 9px; font-size: 12px;
     background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
     box-shadow: var(--shadow); padding: 4px 11px 4px 13px;
