@@ -112,6 +112,38 @@ func TestIsAdmin(t *testing.T) {
 	}
 }
 
+// Identity returns the verified subject + admin flag; anonymous/invalid → ("", false).
+func TestIdentity(t *testing.T) {
+	key, _ := rsa.GenerateKey(rand.Reader, 2048)
+	srv := jwksServer(t, &key.PublicKey)
+	defer srv.Close()
+	const iss = "iss"
+	t.Setenv("AUTH_JWKS_URI", srv.URL)
+	t.Setenv("AUTH_ISSUER", iss)
+	t.Setenv("AUTH_AUDIENCE", "platform")
+	v, err := FromEnv(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tok := mint(t, key, jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss": iss, "aud": "platform", "sub": "user-abc", "admin": true,
+		"exp": time.Now().Add(time.Hour).Unix()})
+	if id, admin := v.Identity(reqWith(tok)); id != "user-abc" || !admin {
+		t.Fatalf("Identity = (%q,%v), want (user-abc,true)", id, admin)
+	}
+	if id, admin := v.Identity(reqWith("")); id != "" || admin {
+		t.Fatalf("anonymous Identity = (%q,%v), want (\"\",false)", id, admin)
+	}
+	// A non-admin user still gets their subject, just not admin.
+	tok2 := mint(t, key, jwt.SigningMethodRS256, jwt.MapClaims{
+		"iss": iss, "aud": "platform", "sub": "plain-user",
+		"exp": time.Now().Add(time.Hour).Unix()})
+	if id, admin := v.Identity(reqWith(tok2)); id != "plain-user" || admin {
+		t.Fatalf("non-admin Identity = (%q,%v), want (plain-user,false)", id, admin)
+	}
+}
+
 // A second RSA key not present in the JWKS must fail: a token can only be trusted
 // if it was signed by a key the JWKS actually publishes.
 func TestIsAdminForeignKey(t *testing.T) {

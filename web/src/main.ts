@@ -6,7 +6,7 @@ import '@platform/ui/base.css';
 import '@platform/ui/gate.css';
 import './app.css';
 import { mountAccountFab } from '@platform/ui/gate';
-import { authFetch, isAdmin, onIdentity } from '@platform/ui/auth';
+import { authFetch, current, isAdmin, onIdentity } from '@platform/ui/auth';
 
 // The URL prefix this app is mounted under ("/" on its own, "/job-searcher/" behind
 // the platform router). Vite bakes it into import.meta.env.BASE_URL at build time, so
@@ -50,6 +50,17 @@ const RUN_YEAR = new Date().getFullYear(); // drop the year on postings from thi
 // survives a refresh even without re-running. The current Results table is persisted
 // too (see setLast), so refreshing no longer loses it.
 let savedRows = [], savedColumns = [], activeTab = 'results';
+// The Aggregate tab's data (persisted listings from the server) and its "New only"
+// filter. Fetched on demand from /api/listings; empty when persistence is off.
+let aggregateData = { columns: [], rows: [] };
+let aggNewOnly = false;
+// The data the table renders for the active tab: saved snapshots, the persisted
+// aggregate, or the current run/preview set.
+function currentData() {
+  if (activeTab === 'saved') return { columns: savedColumns, rows: savedRows };
+  if (activeTab === 'aggregate') return aggregateData;
+  return last;
+}
 try { savedRows = JSON.parse(localStorage.getItem('jobsearch.savedRows') || '[]'); } catch (e) { /* ignore */ }
 try { savedColumns = JSON.parse(localStorage.getItem('jobsearch.savedCols') || '[]'); } catch (e) { /* ignore */ }
 function saveStore() {
@@ -161,13 +172,14 @@ function emptyMsg() {
 }
 function renderTabs() {
   const t = $('tabs'); if (!t) return;
-  t.querySelector('[data-tab="results"]').classList.toggle('active', activeTab === 'results');
-  t.querySelector('[data-tab="saved"]').classList.toggle('active', activeTab === 'saved');
+  for (const btn of t.querySelectorAll('.tab-btn')) btn.classList.toggle('active', btn.dataset.tab === activeTab);
   const c = $('saved-count'); if (c) c.textContent = savedRows.length;
+  // The Aggregate-only controls (New-only + Refresh) show only on that tab.
+  const ctl = $('agg-controls'); if (ctl) ctl.hidden = activeTab !== 'aggregate';
 }
 function render() {
   renderTabs();
-  const data = activeTab === 'saved' ? { columns: savedColumns, rows: savedRows } : last;
+  const data = currentData();
   if (!data || !data.columns || !data.columns.length || !data.rows) {
     $('table').outerHTML = '<div class="empty" id="table">' + emptyMsg() + '</div>';
     $('pager').innerHTML = '';
@@ -246,13 +258,13 @@ function render() {
     e.stopPropagation();
     const key = b.dataset.key; if (!key) return;
     pinned.has(key) ? pinned.delete(key) : pinned.add(key);
-    savePins(); reconcileSaved(key);
+    savePins(); reconcileSaved(key); pushSaved(key);
     render();
   }));
   document.querySelectorAll('#table .appliedbox').forEach(b => b.addEventListener('change', () => {
     const key = b.dataset.key; if (!key) return;
     b.checked ? applied.add(key) : applied.delete(key);
-    saveApplied(); reconcileSaved(key); renderTabs();
+    saveApplied(); reconcileSaved(key); pushSaved(key); renderTabs();
     if (activeTab === 'saved') render(); // on Results, the native checkbox already reflects it
   }));
 
@@ -271,7 +283,7 @@ function renderPager(total, pages, start) {
 }
 
 function sortBy(col) {
-  const data = activeTab === 'saved' ? { columns: savedColumns, rows: savedRows } : last;
+  const data = currentData();
   if (!data || !data.rows) return;
   sortState.dir = sortState.col === col ? -sortState.dir : 1;
   sortState.col = col;
@@ -371,7 +383,7 @@ $('run').addEventListener('click', run);
 // data (the server export doesn't know about them — they're UI state).
 const csvCell = v => { v = (v == null ? '' : String(v)); return /[",\r\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
 $('export').addEventListener('click', () => {
-  const data = activeTab === 'saved' ? { columns: savedColumns, rows: savedRows } : last;
+  const data = currentData();
   if (!data || !data.rows || !data.rows.length) { setStatus('Nothing to export yet', true); return; }
   try {
     const { columns, rows } = data;
@@ -399,8 +411,57 @@ document.querySelectorAll('#cat-filters .fchip').forEach(b => b.addEventListener
 document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('click', () => {
   activeTab = b.dataset.tab;
   sortState = { col: -1, dir: 1 }; page = 0;
-  render();
+  if (activeTab === 'aggregate') loadAggregate(); else render();
 }));
+
+// Aggregate tab: fetch the persisted listings (all, or just the latest scan when
+// "New only" is ticked) and render them through the same table.
+async function loadAggregate() {
+  try {
+    const res = await fetch(api('listings') + '?view=' + (aggNewOnly ? 'new' : 'aggregate'));
+    if (!res.ok) throw new Error(await res.text());
+    aggregateData = await res.json();
+    const n = aggregateData.rows ? aggregateData.rows.length : 0;
+    setStatus(n ? `${n} ${aggNewOnly ? 'new' : 'persisted'} listing${n === 1 ? '' : 's'}.` : 'No persisted listings yet — an admin live run fills this.');
+  } catch (e) { aggregateData = { columns: [], rows: [] }; setStatus(e.message, true); }
+  render();
+}
+$('agg-new-only')?.addEventListener('change', e => { aggNewOnly = e.target.checked; loadAggregate(); });
+$('refresh-btn')?.addEventListener('click', async () => {
+  const b = $('refresh-btn'); const label = b.textContent; b.disabled = true; b.textContent = 'Checking…';
+  try {
+    const res = await authFetch(api('refresh'), { method: 'POST' });
+    if (!res) throw new Error('Sign in as an admin to refresh.');
+    if (!res.ok) throw new Error(await res.text());
+    const { checked, removed } = await res.json();
+    setStatus(`Refreshed — checked ${checked}, removed ${removed} no longer available.`);
+    await loadAggregate();
+  } catch (e) { setStatus(e.message, true); }
+  finally { b.disabled = false; b.textContent = label; }
+});
+
+// Server-side Saved: for a signed-in identity, pins/applied live in Postgres and
+// follow the user across browsers. Guests keep the localStorage sets, unchanged.
+async function loadServerSaved() {
+  if (current()?.mode !== 'user') return;
+  try {
+    const res = await authFetch(api('saved'));
+    if (!res || !res.ok) return;
+    const flags = await res.json();
+    for (const [url, f] of Object.entries(flags)) {
+      if (f.pinned) pinned.add(url); if (f.applied) applied.add(url);
+      reconcileSaved(url);
+    }
+    savePins(); saveApplied(); renderTabs(); render();
+  } catch (e) { /* saved sync is best-effort */ }
+}
+function pushSaved(key) {
+  if (!key || current()?.mode !== 'user') return; // guests persist only in the browser
+  authFetch(api('saved'), {
+    method: 'PUT', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ url: key, pinned: pinned.has(key), applied: applied.has(key) }),
+  }).catch(() => { /* best-effort */ });
+}
 $('import-btn').addEventListener('click', () => $('import-file').click());
 $('import-file').addEventListener('change', async e => {
   const f = e.target.files[0];
@@ -441,7 +502,9 @@ mountAccountFab();
 onIdentity(() => {
   role = isAdmin() ? 'admin' : 'guest';
   applyMode();
+  loadServerSaved(); // pull this identity's saved pins/applied from the server
 });
+loadServerSaved(); // and once on load, for an identity already in localStorage
 // Field selector — single-select (only Software for now). A field searches ALL its
 // roles; the Role column classifies each result into one of them.
 let fields = [];              // [{key,label,roles:[{key,label,match}]}]

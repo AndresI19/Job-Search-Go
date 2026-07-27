@@ -51,6 +51,10 @@
   .tab-btn { border: 1px solid var(--line); border-bottom: none; background: var(--panel-2); color: var(--muted); font: 700 12px/1 inherit; padding: 8px 15px; border-radius: 10px 10px 0 0; cursor: pointer; }
   .tab-btn:hover { color: var(--ink); }
   .tab-btn.active { background: var(--panel); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+  /* Aggregate-only controls: the New-only filter and the Refresh (prune) button. */
+  .agg-controls { display: inline-flex; align-items: center; gap: 12px; margin-left: auto; padding-bottom: 4px; }
+  .agg-new { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 700; color: var(--muted); cursor: pointer; }
+  .agg-new input { accent-color: var(--accent); cursor: pointer; }
   .tab-count { display: inline-block; min-width: 16px; text-align: center; background: var(--accent); color: var(--accent-ink); border-radius: 999px; padding: 1px 6px; font-size: 10px; margin-left: 4px; }
 
   /* Two columns: the filters banner (fold built in) and the table. */

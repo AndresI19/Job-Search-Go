@@ -47,6 +47,10 @@ env:
     value: /etc/.secrets/apify-token
   - name: ANTHROPIC_API_KEY_FILE
     value: /etc/.secrets/anthropic-api-key
+  # Postgres persistence: the connection string is a sealed secret file (added to
+  # job-searcher-secrets). Absent → persistence off, mock/preview only.
+  - name: DATABASE_URL_FILE
+    value: /etc/.secrets/database-url
   # Platform identity: verify a signed admin JWT before allowing a real (Apify-spending) run.
   # JWKS URI + issuer come from the shared platform-config ConfigMap, as the quiz does.
   - name: AUTH_JWKS_URI
