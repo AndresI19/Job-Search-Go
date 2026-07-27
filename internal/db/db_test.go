@@ -130,6 +130,44 @@ func TestMarkUnavailableHidesFromViews(t *testing.T) {
 	}
 }
 
+func TestCanonicalURL(t *testing.T) {
+	base := "https://www.linkedin.com/jobs/view/software-engineer-ii-at-kensho-4403143638"
+	cases := map[string]string{
+		base: base,
+		base + "?position=57&pageNum=0&refId=AAA&trackingId=BBB": base,
+		base + "?refId=DIFFERENT&trackingId=OTHER":               base,
+		base + "#section": base,
+		"not a url":       "not a url",
+	}
+	for in, want := range cases {
+		if got := canonicalURL(in); got != want {
+			t.Errorf("canonicalURL(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// The same posting scraped three times with different LinkedIn tracking params must
+// dedup to ONE row — the bug that made one job appear three times in the aggregate.
+func TestUpsertDedupsTrackingParams(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	base := "https://www.linkedin.com/jobs/view/swe-ii-at-kensho-4403143638"
+	run, _ := d.StartRun(ctx, "software", 3)
+	must(t, d.UpsertResults(ctx, run, []model.Result{
+		listing(base+"?refId=A&trackingId=1", "SWE II"),
+		listing(base+"?refId=B&trackingId=2", "SWE II"),
+		listing(base+"?position=9&refId=C&trackingId=3", "SWE II"),
+	}))
+	agg, err := d.Listings(ctx, Aggregate)
+	must(t, err)
+	if len(agg) != 1 {
+		t.Fatalf("tracking-param variants = %d rows, want 1 (deduped on canonical URL)", len(agg))
+	}
+	if agg[0].Listing.URL != base {
+		t.Fatalf("stored URL = %q, want canonical %q", agg[0].Listing.URL, base)
+	}
+}
+
 func TestSavedRoundTrip(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()

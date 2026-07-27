@@ -18,6 +18,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -27,6 +28,23 @@ import (
 )
 
 type DB struct{ pool *pgxpool.Pool }
+
+// canonicalURL reduces a posting URL to a stable dedup key: scheme + host + path,
+// dropping the query and fragment. It exists because LinkedIn appends a fresh
+// refId/trackingId (and search position) to every scrape of the same posting, so
+// the raw URL made one job persist as several rows. The posting's identity is in
+// the path (…-<jobID>), so the path is the right key. Safe here because Listing.URL
+// is always the POSTING url — an apply URL whose query is meaningful lives in
+// ExternalApplyURL, which is never a dedup key. Unparseable input is returned as-is.
+func canonicalURL(raw string) string {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return raw
+	}
+	u.RawQuery = ""
+	u.Fragment = ""
+	return u.String()
+}
 
 // Open connects using DATABASE_URL (env, else the mounted /etc/.secrets/database-url
 // file). It returns (nil, nil) when none is configured — persistence off, not an
@@ -111,6 +129,11 @@ func (d *DB) UpsertResults(ctx context.Context, runID int64, results []model.Res
 	}
 	batch := &pgx.Batch{}
 	for _, r := range results {
+		// Dedup on the CANONICAL posting URL (path only). LinkedIn tags each scrape of
+		// the same posting with a fresh refId/trackingId query, so the raw URL made one
+		// job land as several rows. Canonicalise the stored URL too, so the row's own
+		// data and the displayed link are the clean posting URL.
+		r.Listing.URL = canonicalURL(r.Listing.URL)
 		if r.Listing.URL == "" {
 			continue // unkeyable — can't dedup
 		}
