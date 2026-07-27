@@ -7,13 +7,6 @@
 <script type="module" src="/src/main.ts"></script>
 </head>
 <body>
-<!-- Run mode readout. Real auth now: sign in through the account button (top-right,
-     from @platform/ui). A signed-in admin runs the live Apify + Claude pipeline; everyone
-     else gets the $0 mock. The pill reflects the current identity; it is not a toggle. -->
-<div class="idswitch" title="Mode follows your identity — sign in as an admin to run the live Apify + Claude pipeline; otherwise runs the $0 mock.">
-  <span class="idlabel" id="idhint">Guest</span>
-  <span class="idmode" id="idmode">mock · $0</span>
-</div>
 
 <div class="layout" id="layout">
   <aside class="banner">
@@ -76,7 +69,8 @@
     <div class="tabs" id="tabs">
       <button class="tab-btn active" data-tab="results">Results</button>
       <button class="tab-btn" data-tab="aggregate" title="Every listing persisted across scans, deduplicated">Aggregate</button>
-      <button class="tab-btn" data-tab="saved">★ Saved <span class="tab-count" id="saved-count">0</span></button>
+      <button class="tab-btn" data-tab="saved" title="Jobs you starred">★ Saved <span class="tab-count" id="saved-count">0</span></button>
+      <button class="tab-btn" data-tab="applied" title="Jobs you ticked as applied">✓ Applied <span class="tab-count" id="applied-count">0</span></button>
       <!-- Aggregate-only controls: highlight just the latest scan, and prune dead listings. -->
       <span class="agg-controls" id="agg-controls" hidden>
         <label class="agg-new" title="Show only what the most recent scan added"><input type="checkbox" id="agg-new-only"> ✨ New only</label>
