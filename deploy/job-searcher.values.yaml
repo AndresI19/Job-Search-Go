@@ -1,0 +1,74 @@
+# Deploy values for job-searcher — the Kubernetes Deployment/Service spec for this service,
+# consumed at deploy time by platform-orchestration's generic `service` chart:
+#   helm upgrade job-searcher <orchestration>/charts/service -n platform \
+#     -f deploy/job-searcher.values.yaml \
+#     --set image.repo=registry:5000/job-searcher --set image.tag=<version> --set version=<version>
+# Shared boilerplate (securityContext uid 1000, read-only rootfs, the /tmp mount, labels, probe
+# rendering) lives in the chart's platform.app helper; only what varies for this service is here.
+# Image repo/tag + version are set per deploy by CI. Keep `name` == the Service DNS name the
+# router (nginx.conf) and any sibling services expect: job-searcher.platform.svc.cluster.local.
+name: job-searcher
+image:
+  repo: job-searcher
+  tag: latest
+version: 0.0.0
+port: 8080
+resources:
+  requests:
+    cpu: 25m
+    memory: 64Mi
+  limits:
+    memory: 256Mi
+probe:
+  path: /job-searcher/api/health
+  initialDelaySeconds: 3
+env:
+  # Bind all interfaces — the localhost default would refuse traffic from the Service.
+  - name: ADDR
+    value: 0.0.0.0:8080
+  # Must match the BASE_PATH the image was built with (Vite baked it into asset URLs).
+  - name: BASE_PATH
+    value: /job-searcher/
+  - name: WEB_DIR
+    value: /app/web
+  - name: CACHE_PATH
+    value: /app/results.cache.csv
+  # The rootfs is read-only; only /tmp (an emptyDir the chart mounts) is writable.
+  - name: PROFILE_PATH
+    value: /tmp/profile.yaml
+  # In-cluster judging: the metered API backend (a pod has no Claude Code login for the CLI
+  # judge). Key comes from the secret file below, never the env.
+  - name: JUDGE_BACKEND
+    value: api
+  - name: JUDGE_MODEL
+    value: claude-haiku-4-5
+  # Secrets are read from files under the read-only mount, so they never enter the pod env.
+  - name: APIFY_TOKEN_FILE
+    value: /etc/.secrets/apify-token
+  - name: ANTHROPIC_API_KEY_FILE
+    value: /etc/.secrets/anthropic-api-key
+  # Platform identity: verify a signed admin JWT before allowing a real (Apify-spending) run.
+  # JWKS URI + issuer come from the shared platform-config ConfigMap, as the quiz does.
+  - name: AUTH_JWKS_URI
+    valueFrom:
+      configMapKeyRef:
+        name: platform-config
+        key: AUTH_JWKS_URI
+  - name: AUTH_ISSUER
+    valueFrom:
+      configMapKeyRef:
+        name: platform-config
+        key: AUTH_ISSUER
+  - name: AUTH_AUDIENCE
+    value: platform
+# The sealed secret (created in platform-orchestration/k8s/bootstrap) mounted as READ-ONLY
+# FILES at /etc/.secrets — keeping APIFY_TOKEN and ANTHROPIC_API_KEY out of both the helm
+# source (only ciphertext is committed) and the pod environment.
+volumeMounts:
+  - name: secrets
+    mountPath: /etc/.secrets
+    readOnly: true
+volumes:
+  - name: secrets
+    secret:
+      secretName: job-searcher-secrets

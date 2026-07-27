@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Job Searcher</title>
+<script type="module" src="/src/main.ts"></script>
+</head>
+<body>
+<!-- Run mode readout. Real auth now: sign in through the account button (top-right,
+     from @platform/ui). A signed-in admin runs the live Apify + Claude pipeline; everyone
+     else gets the $0 mock. The pill reflects the current identity; it is not a toggle. -->
+<div class="idswitch" title="Mode follows your identity — sign in as an admin to run the live Apify + Claude pipeline; otherwise runs the $0 mock.">
+  <span class="idlabel" id="idhint">Guest</span>
+  <span class="idmode" id="idmode">mock · $0</span>
+</div>
+
+<div class="layout" id="layout">
+  <aside class="banner">
+    <div class="filters-body">
+      <div class="side-head">
+        <h1>Job Search — Profile</h1>
+        <span class="sub">Tune your search, then run a suite of jobs.</span>
+      </div>
+
+      <fieldset>
+        <legend>Filters</legend>
+        <label class="field-full"><span>Field (searches all its roles)</span>
+          <div class="chipselect" id="fields"></div></label>
+        <label class="row"><span>Job count <small>(max 10k)</small></span><input type="number" id="job_count" min="1" max="10000" value="10"></label>
+        <label class="field-full"><span>Locations</span>
+          <div class="chipselect" id="locsel"></div></label>
+        <label class="row"><span>Allow remote anywhere</span><input type="checkbox" id="remote_ok"></label>
+        <label class="row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0"></label>
+        <label class="row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000"></label>
+        <label class="row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05"></label>
+        <label class="row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
+        <label class="row"><span>Estimate missing pay</span><input type="checkbox" id="estimate_salary"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Highlight thresholds</legend>
+        <label class="row"><span>Salary light ($)</span><input type="number" id="salary_light" min="0" step="1000"></label>
+        <label class="row"><span>Salary strong ($)</span><input type="number" id="salary_strong" min="0" step="1000"></label>
+        <label class="row"><span>Startup max headcount</span><input type="number" id="startup_max" min="0"></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>Recency (days)</legend>
+        <div class="inline-fields">
+          <label>Fresh ≤<input type="number" id="fresh" min="0"></label>
+          <label>Recent ≤<input type="number" id="recent" min="0"></label>
+          <label>Aging ≤<input type="number" id="aging" min="0"></label>
+        </div>
+      </fieldset>
+
+      <button class="primary run" id="run">▶&nbsp;&nbsp;Run search</button>
+    </div>
+
+    <button class="foldbar" id="toggle" aria-label="Show or hide filters" aria-expanded="true" title="Show/hide filters">
+      <span class="fold-label">Filters</span>
+      <span class="fold-chev">‹</span>
+    </button>
+  </aside>
+
+  <main>
+    <div class="status" id="status">Loading profile…</div>
+    <section class="runview" id="runview" hidden>
+      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-note" id="run-note">mock · $0</span></div>
+      <div class="bars">
+        <div class="barrow"><span class="barlabel">Apify load</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 10</span></div>
+        <div class="barrow"><span class="barlabel">Post-process</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 10</span></div>
+        <div class="barrow"><span class="barlabel">Rate limit</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
+      </div>
+    </section>
+    <div class="tabs" id="tabs">
+      <button class="tab-btn active" data-tab="results">Results</button>
+      <button class="tab-btn" data-tab="saved">★ Saved <span class="tab-count" id="saved-count">0</span></button>
+    </div>
+    <div class="resbar">
+      <button class="rbtn" id="export" title="Download the current results as a CSV">⭳&nbsp; Export</button>
+      <button class="rbtn" id="import-btn" title="Load a previously exported results CSV">⭱&nbsp; Import</button>
+      <input type="file" id="import-file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,application/csv" hidden>
+      <span class="filt-sep"></span>
+      <span class="filt-label">Company</span>
+      <div class="filt-chips" id="cat-filters">
+        <button class="fchip" data-cat="f500" title="Show only Fortune 500 companies"><i style="background:#FFE699"></i>F500</button>
+        <button class="fchip" data-cat="f1000" title="Show only Fortune 1000 companies"><i style="background:#F4B183"></i>F1000</button>
+        <button class="fchip" data-cat="software" title="Show only software companies"><i style="background:#9BC2E6"></i>Software</button>
+        <button class="fchip" data-cat="startup" title="Show only startups"><i style="background:#D9C2E9"></i>Startup</button>
+      </div>
+    </div>
+    <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>
+    <div class="pager" id="pager"></div>
+  </main>
+</div>
+
+</body>
+</html>
