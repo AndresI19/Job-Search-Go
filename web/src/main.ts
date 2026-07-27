@@ -57,7 +57,13 @@ let aggNewOnly = false;
 // The data the table renders for the active tab: saved snapshots, the persisted
 // aggregate, or the current run/preview set.
 function currentData() {
-  if (activeTab === 'saved') return { columns: savedColumns, rows: savedRows };
+  // Saved (starred) and Applied are INDEPENDENT views over the same snapshot pool —
+  // a job can be starred, applied, both, or neither. Aggregate is the persisted set;
+  // otherwise the current run/preview.
+  const idx = savedColumns.indexOf('title');
+  const keyOf = r => r.__key || rowKeyOf(r, idx);
+  if (activeTab === 'saved') return { columns: savedColumns, rows: savedRows.filter(r => pinned.has(keyOf(r))) };
+  if (activeTab === 'applied') return { columns: savedColumns, rows: savedRows.filter(r => applied.has(keyOf(r))) };
   if (activeTab === 'aggregate') return aggregateData;
   return last;
 }
@@ -166,14 +172,16 @@ const FILL_CAT = { FFE699: 'f500', F4B183: 'f1000', '9BC2E6': 'software', D9C2E9
 let catFilter = new Set(); // active categories; empty = show all
 
 function emptyMsg() {
-  return activeTab === 'saved'
-    ? 'No saved jobs yet — star a job (☆) or tick <b>applied</b> and it lands here, kept across refreshes.'
-    : 'Set your filters, then press <b>Run</b> to fetch a suite of jobs.';
+  if (activeTab === 'saved') return 'No starred jobs yet — hit ☆ on a job and it lands here, kept across refreshes.';
+  if (activeTab === 'applied') return 'No applied jobs yet — tick a job\'s checkbox to track what you applied to.';
+  if (activeTab === 'aggregate') return 'No persisted listings yet — an admin live run fills this.';
+  return 'Set your filters, then press <b>Run</b> to fetch a suite of jobs.';
 }
 function renderTabs() {
   const t = $('tabs'); if (!t) return;
   for (const btn of t.querySelectorAll('.tab-btn')) btn.classList.toggle('active', btn.dataset.tab === activeTab);
-  const c = $('saved-count'); if (c) c.textContent = savedRows.length;
+  const sc = $('saved-count'); if (sc) sc.textContent = pinned.size;      // starred
+  const ac = $('applied-count'); if (ac) ac.textContent = applied.size;   // applied
   // The Aggregate-only controls (New-only + Refresh) show only on that tab.
   const ctl = $('agg-controls'); if (ctl) ctl.hidden = activeTab !== 'aggregate';
 }
@@ -265,7 +273,7 @@ function render() {
     const key = b.dataset.key; if (!key) return;
     b.checked ? applied.add(key) : applied.delete(key);
     saveApplied(); reconcileSaved(key); pushSaved(key); renderTabs();
-    if (activeTab === 'saved') render(); // on Results, the native checkbox already reflects it
+    if (activeTab === 'saved' || activeTab === 'applied') render(); // Results shows the live checkbox already
   }));
 
   renderPager(rows.length, pages, start);
