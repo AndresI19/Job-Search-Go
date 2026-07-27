@@ -64,12 +64,35 @@ func FromEnv(ctx context.Context) (*Verifier, error) {
 // issuer/audience, expired, `alg: none` — is "not admin", never an error: the safe
 // direction, matching open-vMCP's identityMiddleware.
 func (v *Verifier) IsAdmin(r *http.Request) bool {
+	_, admin := v.Identity(r)
+	return admin
+}
+
+// Identity returns the verified subject (the token's `sub` — a stable per-user id)
+// and whether the caller is an admin. An anonymous or unverifiable caller is
+// ("", false): the safe default that grants nothing and owns no saved rows. Used
+// to scope per-identity Saved state.
+func (v *Verifier) Identity(r *http.Request) (userID string, isAdmin bool) {
+	claims, ok := v.verified(r)
+	if !ok {
+		return "", false
+	}
+	sub, _ := claims["sub"].(string)
+	admin, _ := claims["admin"].(bool)
+	return sub, admin
+}
+
+// verified parses and validates the request's bearer token, returning its claims.
+// Every failure — no token, bad signature, wrong issuer/audience, expired,
+// `alg: none` — yields (nil, false), never an error: the safe direction, matching
+// open-vMCP's identityMiddleware.
+func (v *Verifier) verified(r *http.Request) (jwt.MapClaims, bool) {
 	if v == nil || v.jwks == nil {
-		return false
+		return nil, false
 	}
 	tok := bearer(r)
 	if tok == "" {
-		return false
+		return nil, false
 	}
 
 	opts := []jwt.ParserOption{
@@ -85,10 +108,9 @@ func (v *Verifier) IsAdmin(r *http.Request) bool {
 	claims := jwt.MapClaims{}
 	parsed, err := jwt.ParseWithClaims(tok, claims, v.jwks.Keyfunc, opts...)
 	if err != nil || !parsed.Valid {
-		return false
+		return nil, false
 	}
-	admin, _ := claims["admin"].(bool)
-	return admin
+	return claims, true
 }
 
 // bearer extracts the token from an `Authorization: Bearer <token>` header, or ""

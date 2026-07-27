@@ -28,6 +28,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/apify"
 	"github.com/AndresI19/Job-Search-Go/internal/ats"
 	"github.com/AndresI19/Job-Search-Go/internal/auth"
+	"github.com/AndresI19/Job-Search-Go/internal/db"
 	"github.com/AndresI19/Job-Search-Go/internal/filter"
 	"github.com/AndresI19/Job-Search-Go/internal/greenhouse"
 	"github.com/AndresI19/Job-Search-Go/internal/judge"
@@ -76,6 +77,20 @@ func main() {
 	}
 	s.auth = v
 
+	// Persistence. With DATABASE_URL set (in-cluster) real runs accumulate into the
+	// aggregate table and Saved is server-backed; without it (local dev / no-DB
+	// deploy) the DB is disabled and the service behaves exactly as before — mock
+	// preview + browser localStorage. A configured-but-unreachable DB is logged, not
+	// fatal: the mock/preview must still serve.
+	database, derr := db.Open(context.Background())
+	if derr != nil {
+		fmt.Fprintf(os.Stderr, "db: persistence unavailable — %v; running without it\n", derr)
+	} else if merr := database.Migrate(context.Background()); merr != nil {
+		fmt.Fprintf(os.Stderr, "db: migrate failed — %v; running without persistence\n", merr)
+		database = nil
+	}
+	s.db = database
+
 	// Wire the real pipeline if the environment allows it. Runs pick mock vs real
 	// per request; this just makes the real path AVAILABLE. Best-effort — without
 	// it, a real request falls back to the mock rather than the server failing.
@@ -91,6 +106,9 @@ func main() {
 	mux.HandleFunc(base+"api/run", s.run)
 	mux.HandleFunc(base+"api/export", s.export)
 	mux.HandleFunc(base+"api/import", s.importResults)
+	mux.HandleFunc(base+"api/listings", s.listings)
+	mux.HandleFunc(base+"api/refresh", s.refresh)
+	mux.HandleFunc(base+"api/saved", s.saved)
 	mux.HandleFunc(base+"api/health", s.health)
 	mux.HandleFunc(base+"version", s.version)
 	mux.Handle(base, s.static())
@@ -206,6 +224,7 @@ type server struct {
 	base                string         // normalised BASE_PATH ("/" or "/job-searcher/")
 	appVersion          string         // deployed version, served from <base>version
 	auth                *auth.Verifier // nil = no platform auth (local dev)
+	db                  *db.DB         // nil/disabled = no persistence (mock + localStorage only)
 	// Real-run dependencies — nil unless the environment enabled them.
 	realReady bool
 	spends    bool // true only when real runs use real (non-mock) backends
@@ -590,6 +609,19 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 		j.mu.Unlock()
 	})
 
+	// Persist the FULL verified set (not the profile-filtered view) into the deduped
+	// aggregate, so the accumulated table holds everything found and the client filters
+	// it later. Best-effort: a persistence error must not fail an otherwise-good run.
+	if s.db.Enabled() {
+		if runID, rerr := s.db.StartRun(ctx, keywords, count); rerr == nil {
+			if uerr := s.db.UpsertResults(ctx, runID, results); uerr != nil {
+				fmt.Fprintf(os.Stderr, "db: upsert run results failed: %v\n", uerr)
+			}
+		} else {
+			fmt.Fprintf(os.Stderr, "db: start run failed: %v\n", rerr)
+		}
+	}
+
 	rows := filter.Apply(output.Header(), output.Rows(results), p.Filters, p.EstimateSalary, time.Now())
 	used, limit, _ := s.apify.Usage(ctx)
 
@@ -709,6 +741,138 @@ func (s *server) download(w http.ResponseWriter, r *http.Request) {
 	if err := report.WriteXLSX(w, header, kept, report.ConfigFrom(p), now); err != nil {
 		httpErr(w, err)
 	}
+}
+
+// listings serves the persisted aggregate (or the latest-scan "new" subset),
+// rendered through the same report pipeline as preview so the table is identical.
+// Empty when persistence is off.
+func (s *server) listings(w http.ResponseWriter, r *http.Request) {
+	view := db.Aggregate
+	if strings.EqualFold(r.URL.Query().Get("view"), "new") {
+		view = db.New
+	}
+	results, err := s.db.Listings(r.Context(), view)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	header := output.Header()
+	data := output.Rows(results)
+	s.setLast(header, data)
+	cols, table := report.Preview(header, data, report.ConfigFrom(profile.Default()), time.Now())
+	writeJSON(w, map[string]any{"columns": cols, "rows": table, "kept": len(data), "total": len(data)})
+}
+
+// refresh re-checks each persisted listing's apply URL and soft-deletes the ones
+// that are definitively gone. Admin-only under configured auth (it mutates the
+// aggregate); a no-op without a DB.
+func (s *server) refresh(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.auth != nil && !s.auth.IsAdmin(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+		http.Error(w, "sign in as an admin to refresh listings", http.StatusUnauthorized)
+		return
+	}
+	cands, err := s.db.AvailabilityCandidates(r.Context())
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	removed, err := s.db.MarkUnavailable(r.Context(), deadURLs(r.Context(), cands))
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]int{"checked": len(cands), "removed": int(removed)})
+}
+
+// saved reads or writes the signed-in identity's pin/applied state. GET returns the
+// user's flags keyed by URL (empty for a guest or without a DB); PUT upserts one URL
+// and requires an identity — a guest keeps its saved state in the browser instead.
+func (s *server) saved(w http.ResponseWriter, r *http.Request) {
+	userID := ""
+	if s.auth != nil {
+		userID, _ = s.auth.Identity(r)
+	}
+	switch r.Method {
+	case http.MethodGet:
+		flags, err := s.db.Saved(r.Context(), userID)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		writeJSON(w, flags)
+	case http.MethodPut:
+		if userID == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+			http.Error(w, "sign in to save listings to your account", http.StatusUnauthorized)
+			return
+		}
+		var body struct {
+			URL     string `json:"url"`
+			Pinned  bool   `json:"pinned"`
+			Applied bool   `json:"applied"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			httpErr(w, err)
+			return
+		}
+		if err := s.db.SetSaved(r.Context(), userID, body.URL, db.SavedFlags{Pinned: body.Pinned, Applied: body.Applied}); err != nil {
+			httpErr(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// deadURLs HEAD-checks each candidate's apply URL and returns the dedup URLs that
+// are definitively gone. Only 404/410 count as dead — a timeout, bot-block (LinkedIn
+// 999), 403 or network error is "uncertain" and left available, so a refresh never
+// wrongly prunes a live listing. Bounded concurrency, short timeout.
+func deadURLs(ctx context.Context, cands []db.Candidate) []string {
+	const workers = 8
+	sem := make(chan struct{}, workers)
+	client := &http.Client{Timeout: 6 * time.Second}
+	var mu sync.Mutex
+	var dead []string
+	var wg sync.WaitGroup
+	for _, c := range cands {
+		target := c.ApplyURL
+		if target == "" {
+			target = c.URL
+		}
+		if target == "" {
+			continue
+		}
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(dedupURL, target string) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			req, err := http.NewRequestWithContext(ctx, http.MethodHead, target, nil)
+			if err != nil {
+				return
+			}
+			req.Header.Set("User-Agent", "job-searcher-refresh/1")
+			resp, err := client.Do(req)
+			if err != nil {
+				return // uncertain → leave available
+			}
+			resp.Body.Close()
+			if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
+				mu.Lock()
+				dead = append(dead, dedupURL)
+				mu.Unlock()
+			}
+		}(c.URL, target)
+	}
+	wg.Wait()
+	return dead
 }
 
 func (s *server) loadCache() ([]string, [][]string, error) {
