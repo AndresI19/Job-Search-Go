@@ -173,8 +173,12 @@ func (d *DB) Listings(ctx context.Context, view View) ([]model.Result, error) {
 	}
 	q := `SELECT result FROM listings WHERE available`
 	if view == New {
-		// The latest run only. No runs yet ⇒ MAX is NULL ⇒ no rows, which is correct.
-		q += ` AND last_run_id = (SELECT MAX(id) FROM runs)`
+		// Genuinely NEW: listings FIRST discovered in the latest run — the jobs this
+		// search added to the aggregate, not the ones it merely re-saw. Keys on
+		// first_run (set once on insert, never touched on conflict), not last_run_id
+		// (which every re-seen listing also carries). No runs yet ⇒ MAX is NULL ⇒ no
+		// rows, which is correct.
+		q += ` AND first_run = (SELECT MAX(id) FROM runs)`
 	}
 	q += ` ORDER BY last_seen DESC`
 	rows, err := d.pool.Query(ctx, q)
