@@ -88,15 +88,19 @@ func TestUpsertDedupAndViews(t *testing.T) {
 		t.Fatalf("aggregate after run2 = %d, want 3 (deduped on url)", len(agg))
 	}
 
-	// "New" = only the latest run's touched rows: A (re-seen) and C.
+	// "New" = only what run2 FIRST discovered: C. A was re-seen, not newly added, so
+	// it must NOT appear in New even though the latest run touched it.
 	fresh, err := d.Listings(ctx, New)
 	must(t, err)
-	if len(fresh) != 2 {
-		t.Fatalf("new = %d, want 2 (A re-seen + C)", len(fresh))
+	if len(fresh) != 1 || fresh[0].Listing.URL != "https://c" {
+		t.Fatalf("new = %v, want exactly [https://c] (only the newly-added listing)", fresh)
 	}
-	// The re-seen A carries its updated result, not the stale one.
+
+	// The re-seen A still refreshed its stored result in the aggregate (visible there,
+	// just not counted as "new").
+	all, _ := d.Listings(ctx, Aggregate)
 	var sawUpdated bool
-	for _, r := range fresh {
+	for _, r := range all {
 		if r.Listing.URL == "https://a" && r.Listing.Title == "A-updated" {
 			sawUpdated = true
 		}
