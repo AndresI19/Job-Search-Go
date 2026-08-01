@@ -435,12 +435,19 @@ function sortBy(col) {
   sortState.col = col;
   page = 0; // a re-sort re-orders the whole set — start from the top of it
   const num = isNumericCol(data.columns[col]);
-  data.rows.sort((a, b) => {
-    let x = a.cells[col].value, y = b.cells[col].value;
-    if (num) { return ((Number(x) || 0) - (Number(y) || 0)) * sortState.dir; }
-    return x.localeCompare(y) * sortState.dir;
-  });
-  if (activeTab === 'saved') saveStore(); else persistLastRows();
+  const cmp = (a, b) => {
+    const x = a.cells[col] ? a.cells[col].value : '', y = b.cells[col] ? b.cells[col].value : '';
+    if (num) return ((Number(x) || 0) - (Number(y) || 0)) * sortState.dir;
+    return String(x).localeCompare(String(y)) * sortState.dir;
+  };
+  // Sort the BACKING array, not the view. currentData() hands the Saved/Applied tabs a
+  // fresh savedRows.filter(...) copy each render, so sorting that copy would be thrown
+  // away on the next render — the reorder has to land on savedRows itself to stick.
+  const saved = activeTab === 'saved' || activeTab === 'applied';
+  const backing = saved ? savedRows : activeTab === 'aggregate' ? aggregateData.rows : (last && last.rows);
+  if (!backing) return;
+  backing.sort(cmp);
+  if (saved) saveStore(); else persistLastRows();
   render();
 }
 function persistLastRows() { try { if (last) localStorage.setItem('jobsearch.last', JSON.stringify(last)); } catch (e) { /* quota */ } }
