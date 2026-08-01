@@ -15,6 +15,92 @@ const BASE = import.meta.env.BASE_URL;
 const api = (p) => BASE + 'api/' + p;
 
 const $ = id => document.getElementById(id);
+
+// Thousands-separated number inputs (class="numsep"): the field shows "10,000" but
+// the user never types a comma, and every reader strips them back out. Applies to the
+// large-integer fields (job count, salaries, headcount) that routinely reach 4+ digits.
+const stripSep = s => String(s ?? '').replace(/,/g, '');
+const digitsOnly = s => stripSep(s).replace(/\D/g, '');
+const groupThousands = d => (d ? Number(d).toLocaleString('en-US') : '');
+// Comma-safe numeric read: use everywhere a menu input's number is needed.
+const numOf = id => Number(stripSep($(id).value));
+// Reformat one field to grouped digits while keeping the caret in the right place
+// (count digits left of the caret, restore after the same count past any commas).
+function formatSepInput(el) {
+  const digitsLeft = digitsOnly(el.value.slice(0, el.selectionStart ?? el.value.length)).length;
+  el.value = groupThousands(digitsOnly(el.value));
+  let pos = 0, seen = 0;
+  while (pos < el.value.length && seen < digitsLeft) { if (/\d/.test(el.value[pos])) seen++; pos++; }
+  try { el.setSelectionRange(pos, pos); } catch (e) { /* not focused — ignore */ }
+}
+function formatAllSep() { for (const el of document.querySelectorAll('.numsep')) el.value = groupThousands(digitsOnly(el.value)); }
+const jobCountMax = () => Number($('job_count')?.dataset.max || 10000);
+// Snap job count DOWN to its ceiling the instant it's exceeded — live, as you type —
+// so an over-cap number never sits in the box (entering 5,000 with a 1,000 cap snaps
+// to 1,000 immediately, with a note, not silently and not only on blur).
+function snapJobCountMax() {
+  const el = $('job_count'); if (!el) return;
+  const max = jobCountMax();
+  if (Number(digitsOnly(el.value)) > max) {
+    el.value = groupThousands(String(max));
+    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* ignore */ }
+    setStatus(`Job count capped at ${groupThousands(String(max))} — the most one run fetches.`);
+  }
+}
+// job_count's per-keystroke handler: comma-format, then snap to the ceiling if over.
+function onJobCountInput() {
+  const el = $('job_count'); if (!el) return;
+  formatSepInput(el);
+  snapJobCountMax();
+}
+// Blur/relayout clamp: applies BOTH bounds (a below-min or over-max value settles into
+// range). The live snap covers max-while-typing; this catches the min and any paste.
+function clampJobCount() {
+  const el = $('job_count'); if (!el) return;
+  const max = jobCountMax(), min = Number(el.dataset.min || 1);
+  const v = Number(digitsOnly(el.value));
+  if (!v) return; // blank is allowed — the server falls back to its default
+  const clamped = Math.min(max, Math.max(min, v));
+  el.value = groupThousands(String(clamped));
+  if (clamped !== v) setStatus(`Job count capped at ${groupThousands(String(max))} — the most one run fetches.`);
+}
+function wireThousands() {
+  for (const el of document.querySelectorAll('.numsep')) {
+    // Every numsep field comma-formats live; job_count also live-snaps to its cap.
+    el.addEventListener('input', el.id === 'job_count' ? onJobCountInput : () => formatSepInput(el));
+  }
+  $('job_count')?.addEventListener('blur', clampJobCount);
+  formatAllSep();
+}
+
+// The honest job-count ceiling scales with how many locations are selected: a single
+// LinkedIn search tops out near perLocationCap (~1,000), so N places ⇒ N×perLocationCap.
+// The server enforces the same cap; this just keeps the input's max + hint truthful.
+const perLocationCap = 1000;
+const dynamicJobMax = () => perLocationCap * Math.max(1, selectedLocations.size);
+function updateJobCountMax() {
+  const el = $('job_count'); if (!el) return;
+  const max = dynamicJobMax();
+  el.dataset.max = String(max);
+  const hint = $('jobcount-hint'); if (hint) hint.textContent = `(max ${groupThousands(String(max))})`;
+  clampJobCount(); // a now-lower ceiling must pull an over-limit value back down
+}
+
+// Transient bottom-centre toast, auto-dismissed. Used for the post-run scan summary.
+let toastTimer = 0;
+function toast(html) {
+  const el = $('toast'); if (!el) return;
+  el.innerHTML = html;
+  el.hidden = false;
+  void el.offsetWidth;        // reflow so the fade-in transition actually runs
+  el.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => {
+    el.classList.remove('show');
+    setTimeout(() => { el.hidden = true; }, 300);
+  }, 6500);
+}
+
 let sortState = { col: -1, dir: 1 };
 let last = null;
 try { const s = localStorage.getItem('jobsearch.last'); if (s) last = JSON.parse(s); } catch (e) { /* ignore */ }
@@ -43,6 +129,11 @@ function savePins() { try { localStorage.setItem('jobsearch.pins', JSON.stringif
 let applied = new Set();
 try { applied = new Set(JSON.parse(localStorage.getItem('jobsearch.applied') || '[]')); } catch (e) { /* ignore */ }
 function saveApplied() { try { localStorage.setItem('jobsearch.applied', JSON.stringify([...applied])); } catch (e) { /* ignore */ } }
+
+// Saved jobs the availability sweep has retired (the posting 404s now). Reported by
+// the server per Saved-tab load; the row stays visible, tagged "no longer listed",
+// rather than disappearing. Session-only — it's re-derived from the server each load.
+let unavailable = new Set();
 const rowKeyOf = (r, idxTitle) => r.url || (r.cells[idxTitle] ? r.cells[idxTitle].value : '');
 const RUN_YEAR = new Date().getFullYear(); // drop the year on postings from this same year
 
@@ -105,10 +196,11 @@ function populate(p) {
   $('recent').value = p.highlight.recency_recent_days;
   $('aging').value = p.highlight.recency_aging_days;
   $('estimate_salary').checked = p.estimate_salary;
+  formatAllSep(); // the values just set are raw numbers — group them with commas
 }
 
 function collect() {
-  const n = id => Number($(id).value);
+  const n = numOf;
   const c = id => $(id).checked;
   return {
     filters: {
@@ -122,6 +214,7 @@ function collect() {
     },
     estimate_salary: c('estimate_salary'),
     job_count: n('job_count'),
+    location_count: selectedLocations.size, // drives the server's per-location job-count cap
     field: selectedField,
     role: role,
   };
@@ -158,7 +251,7 @@ function fmt(name, v) {
 // reflect the current threshold inputs.
 function chip(hex, label) { return `<span class="chip"><span class="sw" style="background:#${hex}"></span>${label}</span>`; }
 function legendChips(col) {
-  const n = id => Number($(id).value);
+  const n = numOf;
   const k = v => '$' + Math.round(v / 1000) + 'k';
   if (col === 'company') return chip('FFE699', 'F500') + chip('F4B183', 'F1000') + chip('9BC2E6', 'Software') + chip('D9C2E9', 'Startup');
   if (col === 'salary_min') return chip('E2EFDA', '≥' + k(n('salary_light'))) + chip('A9D08E', '≥' + k(n('salary_strong')));
@@ -232,6 +325,9 @@ function render() {
       if (i === idxTitle) {
         cls = 'title';
         if (r.url) val = `<a href="${esc(r.url)}" target="_blank" rel="noopener">${val}</a>`;
+        // A saved job the availability sweep retired: keep it, but flag it so the
+        // link isn't mistaken for a still-open posting.
+        if (key && unavailable.has(key)) val += ' <span class="gone" title="This posting was not reachable at the last refresh">no longer listed</span>';
       } else if (name === 'remote') {
         const yes = cell.value === 'true';
         val = yes ? '✓' : (cell.value === 'false' ? '✗' : '');
@@ -361,6 +457,7 @@ async function poll(id) {
     const j = await res.json();
     setBar('apify', j.apify.done, j.apify.total);
     setBar('verify', j.verify.done, j.verify.total);
+    $('run-target').textContent = j.apify.total ? `Target: ${groupThousands(String(j.apify.total))} jobs` : '';
     $('bar-rate').style.width = Math.min(100, j.rate.used / j.rate.limit * 100) + '%';
     $('num-rate').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
     $('run-title').textContent =
@@ -372,9 +469,18 @@ async function poll(id) {
       sortState = { col: -1, dir: 1 }; page = 0;
       showRunview(false);
       render();
-      $('status').innerHTML = rows.length
-        ? `Run complete — <span class="count">${rows.length}</span> jobs loaded.`
-        : `Run complete — <span class="count">0</span> jobs matched your filters (try loosening them).`;
+      // Honest scan summary: how many the scrape actually returned (verify.total),
+      // how many the profile filters dropped before rendering, and how many remain.
+      const shown = rows.length;
+      const scanned = (j.verify && j.verify.total) || shown;
+      const filtered = Math.max(0, scanned - shown);
+      const g = v => groupThousands(String(v));
+      toast(filtered > 0
+        ? `Scanned <b>${g(scanned)}</b> · filtered out <b>${g(filtered)}</b> · showing <b>${g(shown)}</b>`
+        : `Scanned <b>${g(scanned)}</b> · showing <b>${g(shown)}</b>`);
+      $('status').innerHTML = shown
+        ? `Run complete — <span class="count">${g(shown)}</span> shown.`
+        : `Run complete — <span class="count">0</span> matched your filters (try loosening them).`;
       $('status').className = 'status';
       resetRun();
       return;
@@ -455,12 +561,27 @@ async function loadServerSaved() {
   try {
     const res = await authFetch(api('saved'));
     if (!res || !res.ok) return;
-    const flags = await res.json();
+    // The server now returns the saved ROWS, not just the flags — so the Saved/
+    // Applied tabs reconstruct even on a browser that never ran the search that
+    // saved them (and after a Refresh sweep retired the listing). Adopt those rows
+    // as the durable snapshot pool; local-only pins (saved off the mock preview,
+    // never persisted server-side) keep their existing localStorage snapshot.
+    const payload = await res.json();
+    const flags = payload.flags || {};
+    if (payload.columns && payload.columns.length) savedColumns = payload.columns;
+    unavailable = new Set();
     for (const [url, f] of Object.entries(flags)) {
       if (f.pinned) pinned.add(url); if (f.applied) applied.add(url);
-      reconcileSaved(url);
+      if (f.available === false) unavailable.add(url);
     }
-    savePins(); saveApplied(); renderTabs(); render();
+    for (const row of (payload.rows || [])) {
+      const key = row.url;
+      if (!key) continue;
+      const snap = { ...row, __key: key };
+      const idx = savedRows.findIndex(x => x.__key === key);
+      if (idx >= 0) savedRows[idx] = snap; else savedRows.push(snap);
+    }
+    savePins(); saveApplied(); saveStore(); renderTabs(); render();
   } catch (e) { /* saved sync is best-effort */ }
 }
 function pushSaved(key) {
@@ -563,6 +684,7 @@ function renderLocations() {
     const k = b.dataset.key;
     selectedLocations.has(k) ? selectedLocations.delete(k) : selectedLocations.add(k);
     renderLocations();
+    updateJobCountMax(); // the ceiling tracks the number of selected places
   }));
 }
 // expandLocations turns the selected places into the raw match substrings the filter
@@ -638,6 +760,8 @@ $('toggle').addEventListener('click', () => {
   wrap.addEventListener('mouseleave', () => { cur = null; hide(); });
 })();
 
+wireThousands(); // comma-format the numeric inputs and enforce the job-count cap on blur
+updateJobCountMax(); // set the initial max/hint from the default selected locations
 fetch(api('profile')).then(r => r.json()).then(p => {
   populate(p);
   preview();

@@ -34,6 +34,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/judge"
 	"github.com/AndresI19/Job-Search-Go/internal/lever"
 	"github.com/AndresI19/Job-Search-Go/internal/linkedin"
+	"github.com/AndresI19/Job-Search-Go/internal/model"
 	"github.com/AndresI19/Job-Search-Go/internal/output"
 	"github.com/AndresI19/Job-Search-Go/internal/pipeline"
 	"github.com/AndresI19/Job-Search-Go/internal/profile"
@@ -334,17 +335,34 @@ func (j *jobState) snapshot() map[string]any {
 }
 
 const (
-	suiteSize   = 10    // default jobs per run when the request names none
-	maxJobCount = 10000 // hard ceiling on a run's job count
+	suiteSize      = 10   // default jobs per run when the request names none
+	perLocationCap = 1000 // ~LinkedIn's reachable results per search, so the honest
+	//                        ceiling scales with the number of locations searched.
+	maxJobCount = 10000 // absolute safety ceiling regardless of location count
 )
 
 // runReq is a run's POST body: the profile, the requested job count, the selected
-// field (mapped to a curated all-roles keyword query), and the role.
+// field (mapped to a curated all-roles keyword query), the role, and how many
+// locations were selected (drives the per-location job-count ceiling).
 type runReq struct {
 	profile.Profile
-	JobCount int    `json:"job_count"`
-	Field    string `json:"field"`
-	Role     string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
+	JobCount      int    `json:"job_count"`
+	LocationCount int    `json:"location_count"` // number of places selected; caps count at perLocationCap × this
+	Field         string `json:"field"`
+	Role          string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
+}
+
+// jobCountCap is the honest ceiling for a run: perLocationCap per selected location
+// (a single LinkedIn search tops out near perLocationCap), bounded by the absolute
+// maxJobCount. Zero locations still allows one search's worth.
+func jobCountCap(locations int) int {
+	if locations < 1 {
+		locations = 1
+	}
+	if cap := perLocationCap * locations; cap < maxJobCount {
+		return cap
+	}
+	return maxJobCount
 }
 
 // profRole is one role within a field: the LinkedIn keyword query it contributes
@@ -425,10 +443,10 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		count := req.JobCount
-		if count < 1 {
+		if cap := jobCountCap(req.LocationCount); count < 1 {
 			count = suiteSize
-		} else if count > maxJobCount {
-			count = maxJobCount
+		} else if count > cap {
+			count = cap
 		}
 		p := req.Profile
 		// Admin decision. In-cluster (platform auth configured) it is a verified,
@@ -799,12 +817,30 @@ func (s *server) saved(w http.ResponseWriter, r *http.Request) {
 	}
 	switch r.Method {
 	case http.MethodGet:
-		flags, err := s.db.Saved(r.Context(), userID)
+		// Return each saved job WITH its row data (not just the flag), so the Saved/
+		// Applied tabs reconstruct from the server and survive a refresh or a fresh
+		// browser — the client no longer needs a localStorage snapshot from the run
+		// that saved them. `flags` is keyed by the same trimmed URL the rows expose,
+		// and carries `available` so a job the Refresh sweep retired renders as
+		// "no longer listed" instead of vanishing.
+		saved, err := s.db.SavedListings(r.Context(), userID)
 		if err != nil {
 			httpErr(w, err)
 			return
 		}
-		writeJSON(w, flags)
+		results := make([]model.Result, len(saved))
+		for i, sl := range saved {
+			results[i] = sl.Result
+		}
+		header := output.Header()
+		cols, table := report.Preview(header, output.Rows(results), report.ConfigFrom(profile.Default()), time.Now())
+		flags := make(map[string]map[string]bool, len(table))
+		for i, pr := range table {
+			flags[pr.URL] = map[string]bool{
+				"pinned": saved[i].Pinned, "applied": saved[i].Applied, "available": saved[i].Available,
+			}
+		}
+		writeJSON(w, map[string]any{"flags": flags, "columns": cols, "rows": table})
 	case http.MethodPut:
 		if userID == "" {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)

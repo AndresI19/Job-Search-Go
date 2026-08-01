@@ -62,6 +62,10 @@ func TestOpenDisabledWithoutURL(t *testing.T) {
 	if err != nil || got != nil {
 		t.Fatalf("Listings no-op: %v %v", got, err)
 	}
+	sl, err := d.SavedListings(context.Background(), "user-123")
+	if err != nil || sl != nil {
+		t.Fatalf("SavedListings no-op: %v %v", sl, err)
+	}
 }
 
 func TestUpsertDedupAndViews(t *testing.T) {
@@ -194,6 +198,55 @@ func TestSavedRoundTrip(t *testing.T) {
 	got, _ = d.Saved(ctx, user)
 	if _, ok := got["https://a"]; ok {
 		t.Fatal("clearing both flags should delete the saved row")
+	}
+}
+
+// The fix's core guarantee: a saved job the availability sweep retired must still be
+// returned by SavedListings (so the Saved/Applied tabs keep it), flagged Available=false
+// — unlike Listings, which hides unavailable rows from the aggregate.
+func TestSavedListingsSurviveRefreshSweep(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	const user = "user-123"
+	run, _ := d.StartRun(ctx, "software", 2)
+	must(t, d.UpsertResults(ctx, run, []model.Result{
+		listing("https://live", "Live Job"),
+		listing("https://dead", "Dead Job"),
+	}))
+	// The client saves on the canonical URL — the same key listings dedups on — so the
+	// join lines up. Pin the live one, mark the other applied.
+	must(t, d.SetSaved(ctx, user, "https://live", SavedFlags{Pinned: true}))
+	must(t, d.SetSaved(ctx, user, "https://dead", SavedFlags{Applied: true}))
+	// A pin whose posting was never persisted (saved off the mock preview) has no stored
+	// row; it stays a browser-local snapshot and must NOT surface here.
+	must(t, d.SetSaved(ctx, user, "https://never-persisted", SavedFlags{Pinned: true}))
+	// The Refresh sweep retires the dead posting — it leaves the aggregate…
+	if _, err := d.MarkUnavailable(ctx, []string{"https://dead"}); err != nil {
+		t.Fatal(err)
+	}
+	if agg, _ := d.Listings(ctx, Aggregate); len(agg) != 1 {
+		t.Fatalf("aggregate should hide the retired job, got %d rows", len(agg))
+	}
+
+	// …but the user's saved view must still hold both saved-and-persisted jobs.
+	saved, err := d.SavedListings(ctx, user)
+	must(t, err)
+	if len(saved) != 2 {
+		t.Fatalf("SavedListings = %d rows, want 2 (retired-but-saved job must survive; unpersisted pin excluded)", len(saved))
+	}
+	byURL := map[string]SavedListing{}
+	for _, s := range saved {
+		byURL[s.Result.Listing.URL] = s
+	}
+	if live := byURL["https://live"]; !live.Available || !live.Pinned {
+		t.Fatalf("live saved job wrong: %+v", live)
+	}
+	if dead := byURL["https://dead"]; dead.Available || !dead.Applied || dead.Result.Listing.Title != "Dead Job" {
+		t.Fatalf("retired saved job must return Available=false with intact row data: %+v", dead)
+	}
+	// Saved is per-identity: another user sees none of this.
+	if other, _ := d.SavedListings(ctx, "someone-else"); len(other) != 0 {
+		t.Fatalf("SavedListings leaked across identities: %+v", other)
 	}
 }
 
