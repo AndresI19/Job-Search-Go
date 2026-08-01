@@ -260,9 +260,33 @@ function legendChips(col) {
   return '';
 }
 
-// Company-category filter — maps a company-cell fill colour to a category key.
+// Faceted result filters, both behind the Filters popover. Company categories map a
+// company-cell fill colour to a key; locations are the normalized labels present in the
+// current result set (built exhaustively on each panel open). Both empty = show all.
 const FILL_CAT = { FFE699: 'f500', F4B183: 'f1000', '9BC2E6': 'software', D9C2E9: 'startup' };
-let catFilter = new Set(); // active categories; empty = show all
+let catFilter = new Set(); // active company categories
+let locFilter = new Set(); // active location labels
+
+// Rebuild the Location chips from the CURRENT view's rows, so the facet is exhaustive
+// and always reflects what's actually on screen. Preserves any still-valid selections.
+function buildLocOptions() {
+  const el = $('loc-filters'); if (!el) return;
+  const d = currentData();
+  const lc = d && d.columns ? d.columns.indexOf('location') : -1;
+  const labels = new Set();
+  if (lc >= 0) for (const r of (d.rows || [])) { const v = normalizeLocation(r.cells[lc] ? r.cells[lc].value : ''); if (v) labels.add(v); }
+  // Drop selections that no longer exist in this view so the badge stays truthful.
+  for (const l of [...locFilter]) if (!labels.has(l)) locFilter.delete(l);
+  if (!labels.size) { el.innerHTML = '<span class="filt-empty">Run a search to filter by location.</span>'; return; }
+  el.innerHTML = [...labels].sort((a, b) => a.localeCompare(b)).map(l =>
+    `<button class="fchip${locFilter.has(l) ? ' sel' : ''}" data-loc="${esc(l)}"><i style="background:${hashColor(l)}"></i>${esc(l)}</button>`).join('');
+}
+
+function updateFilterBadge() {
+  const n = catFilter.size + locFilter.size;
+  const badge = $('filter-badge'); if (badge) { badge.textContent = n; badge.hidden = n === 0; }
+  $('filter-btn')?.classList.toggle('on', n > 0);
+}
 
 function emptyMsg() {
   if (activeTab === 'saved') return 'No starred jobs yet — hit ☆ on a job and it lands here, kept across refreshes.';
@@ -288,15 +312,21 @@ function render() {
   }
   const { columns } = data;
   let rows = data.rows;
-  // Filter (not sort) by company category: keep rows whose company cell matches any
-  // selected category. F500 is matched before F1000, so the F1000 chip shows the
-  // 501–1000 tier; combine chips to widen.
-  if (catFilter.size) {
+  // Faceted filter (not sort): OR within a facet, AND across facets. A row is kept when
+  // it matches the selected company categories (by cell fill) AND the selected locations
+  // (by normalized label). An empty facet imposes no constraint. F500 is matched before
+  // F1000, so the F1000 chip is the 501–1000 tier; combine chips to widen.
+  if (catFilter.size || locFilter.size) {
     const cc = columns.indexOf('company');
-    if (cc >= 0) rows = rows.filter(r => { const f = r.cells[cc] && r.cells[cc].fill; return f && catFilter.has(FILL_CAT[f]); });
+    const lc = columns.indexOf('location');
+    rows = rows.filter(r => {
+      const okCat = !catFilter.size || (cc >= 0 && catFilter.has(FILL_CAT[r.cells[cc] && r.cells[cc].fill]));
+      const okLoc = !locFilter.size || (lc >= 0 && locFilter.has(normalizeLocation(r.cells[lc] ? r.cells[lc].value : '')));
+      return okCat && okLoc;
+    });
   }
   if (!rows.length) {
-    $('table').outerHTML = '<div class="empty" id="table">' + (catFilter.size ? 'No listings match the selected company filters.' : 'No listings match this profile.') + '</div>';
+    $('table').outerHTML = '<div class="empty" id="table">' + ((catFilter.size || locFilter.size) ? 'No listings match the selected filters.' : 'No listings match this profile.') + '</div>';
     $('pager').innerHTML = '';
     return;
   }
@@ -519,9 +549,33 @@ document.querySelectorAll('#cat-filters .fchip').forEach(b => b.addEventListener
   const cat = b.dataset.cat;
   catFilter.has(cat) ? catFilter.delete(cat) : catFilter.add(cat);
   b.classList.toggle('sel');
-  page = 0;
-  render();
+  page = 0; updateFilterBadge(); render();
 }));
+// Location chips are rebuilt on each panel open, so bind the toggle by delegation.
+$('loc-filters')?.addEventListener('click', e => {
+  const b = e.target.closest('.fchip'); if (!b) return;
+  const loc = b.dataset.loc;
+  locFilter.has(loc) ? locFilter.delete(loc) : locFilter.add(loc);
+  b.classList.toggle('sel');
+  page = 0; updateFilterBadge(); render();
+});
+// The Filters popover: open builds the (exhaustive) location list; clear resets both facets.
+function setFilterPanel(open) {
+  const panel = $('filter-panel'), btn = $('filter-btn');
+  if (!panel || !btn) return;
+  if (open) buildLocOptions();
+  panel.hidden = !open;
+  btn.setAttribute('aria-expanded', String(open));
+}
+$('filter-btn')?.addEventListener('click', e => { e.stopPropagation(); setFilterPanel($('filter-panel').hidden); });
+$('filter-panel')?.addEventListener('click', e => e.stopPropagation()); // clicks inside stay open
+$('filter-clear')?.addEventListener('click', () => {
+  catFilter.clear(); locFilter.clear();
+  document.querySelectorAll('#cat-filters .fchip.sel, #loc-filters .fchip.sel').forEach(c => c.classList.remove('sel'));
+  page = 0; updateFilterBadge(); render();
+});
+document.addEventListener('click', () => { if (!$('filter-panel')?.hidden) setFilterPanel(false); });
+document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('filter-panel')?.hidden) setFilterPanel(false); });
 document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('click', () => {
   activeTab = b.dataset.tab;
   sortState = { col: -1, dir: 1 }; page = 0;

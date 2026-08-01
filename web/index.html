@@ -83,12 +83,24 @@
       <button class="rbtn" id="import-btn" title="Load a previously exported results CSV">⭱&nbsp; Import</button>
       <input type="file" id="import-file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,application/csv" hidden>
       <span class="filt-sep"></span>
-      <span class="filt-label">Company</span>
-      <div class="filt-chips" id="cat-filters">
-        <button class="fchip" data-cat="f500" title="Show only Fortune 500 companies"><i style="background:#FFE699"></i>F500</button>
-        <button class="fchip" data-cat="f1000" title="Show only Fortune 1000 companies"><i style="background:#F4B183"></i>F1000</button>
-        <button class="fchip" data-cat="software" title="Show only software companies"><i style="background:#9BC2E6"></i>Software</button>
-        <button class="fchip" data-cat="startup" title="Show only startups"><i style="background:#D9C2E9"></i>Startup</button>
+      <div class="filt-wrap">
+        <button class="rbtn" id="filter-btn" title="Filter the results by location and company" aria-haspopup="true" aria-expanded="false">⏷&nbsp; Filters<span class="filt-badge" id="filter-badge" hidden>0</span></button>
+        <div class="filt-panel" id="filter-panel" hidden>
+          <div class="filt-panel-head"><span>Filter results</span><button class="filt-clear" id="filter-clear" type="button">Clear all</button></div>
+          <div class="filt-section">
+            <div class="filt-heading">Location</div>
+            <div class="filt-chips" id="loc-filters"><span class="filt-empty">Run a search to filter by location.</span></div>
+          </div>
+          <div class="filt-section">
+            <div class="filt-heading">Company</div>
+            <div class="filt-chips" id="cat-filters">
+              <button class="fchip" data-cat="f500" title="Fortune 500 companies"><i style="background:#FFE699"></i>F500</button>
+              <button class="fchip" data-cat="f1000" title="Fortune 1000 companies"><i style="background:#F4B183"></i>F1000</button>
+              <button class="fchip" data-cat="software" title="Software companies"><i style="background:#9BC2E6"></i>Software</button>
+              <button class="fchip" data-cat="startup" title="Startups"><i style="background:#D9C2E9"></i>Startup</button>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>

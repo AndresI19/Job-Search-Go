@@ -31,6 +31,22 @@
   .fchip:hover { border-color: var(--accent); color: var(--accent); }
   .fchip.sel { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
   .fchip.sel i { outline: 1px solid var(--accent-ink); }
+  /* Faceted filter menu — one icon button reveals a popover of Location + Company facets. */
+  .filt-wrap { position: relative; display: inline-flex; }
+  .filt-badge { display: inline-flex; align-items: center; justify-content: center; min-width: 16px; height: 16px; margin-left: 6px; padding: 0 4px; border-radius: 999px; background: var(--accent); color: var(--accent-ink); font-size: 10px; font-weight: 800; }
+  #filter-btn.on { border-color: var(--accent); color: var(--accent); }
+  .filt-panel {
+    position: absolute; top: calc(100% + 6px); right: 0; z-index: 50; width: 300px; max-width: 88vw;
+    background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow-lg);
+    padding: 12px 14px;
+  }
+  .filt-panel-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; font-size: 12px; font-weight: 800; color: var(--ink); }
+  .filt-clear { border: 0; background: transparent; color: var(--accent); font: 700 11px/1 inherit; cursor: pointer; padding: 2px 4px; }
+  .filt-clear:hover { text-decoration: underline; }
+  .filt-section + .filt-section { margin-top: 11px; padding-top: 11px; border-top: 1px solid var(--line); }
+  .filt-heading { color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: .4px; font-size: 10px; margin-bottom: 6px; }
+  .filt-panel .filt-chips { max-height: 168px; overflow-y: auto; }
+  .filt-empty { color: var(--muted); font-size: 11.5px; font-style: italic; }
   /* Results / Saved tabs. */
   .tabs { display: flex; gap: 4px; margin-bottom: 8px; }
   .tab-btn { border: 1px solid var(--line); border-bottom: none; background: var(--panel-2); color: var(--muted); font: 700 12px/1 inherit; padding: 8px 15px; border-radius: 10px 10px 0 0; cursor: pointer; }
