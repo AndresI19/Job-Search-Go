@@ -268,6 +268,53 @@ func (d *DB) Saved(ctx context.Context, userID string) (map[string]SavedFlags, e
 	return out, rows.Err()
 }
 
+// SavedListing is one of a user's saved jobs joined back to its stored row: the
+// reconstructed Result, the user's flags, and whether the listing is still
+// available. Unlike Listings, this deliberately does NOT filter on `available`
+// — a job the Refresh sweep soft-deleted (filled/expired) must still render in
+// the user's Saved/Applied tabs, only marked "no longer listed" (Available=false).
+type SavedListing struct {
+	Result    model.Result
+	Pinned    bool
+	Applied   bool
+	Available bool
+}
+
+// SavedListings returns a signed-in user's saved jobs WITH their row data, so the
+// Saved/Applied tabs survive a refresh and follow the identity across browsers —
+// the client no longer depends on a localStorage snapshot from the run that saved
+// them. Joins saved→listings on the canonical URL; pins whose URL was never
+// persisted to listings (e.g. saved off the mock preview) have no stored row and
+// are skipped here — those remain the browser's own localStorage snapshot.
+func (d *DB) SavedListings(ctx context.Context, userID string) ([]SavedListing, error) {
+	if !d.Enabled() || userID == "" {
+		return nil, nil
+	}
+	rows, err := d.pool.Query(ctx, `
+		SELECT l.result, s.pinned, s.applied, l.available
+		FROM saved s
+		JOIN listings l ON l.url = s.url
+		WHERE s.user_id = $1 AND (s.pinned OR s.applied)
+		ORDER BY l.last_seen DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SavedListing
+	for rows.Next() {
+		var raw []byte
+		var sl SavedListing
+		if err := rows.Scan(&raw, &sl.Pinned, &sl.Applied, &sl.Available); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &sl.Result); err != nil {
+			return nil, fmt.Errorf("decode saved result: %w", err)
+		}
+		out = append(out, sl)
+	}
+	return out, rows.Err()
+}
+
 // SetSaved upserts a user's flags for a URL; a row with both flags false is
 // deleted, so unpinning-and-unapplying leaves no residue.
 func (d *DB) SetSaved(ctx context.Context, userID, url string, f SavedFlags) error {

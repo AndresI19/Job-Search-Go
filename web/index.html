@@ -20,12 +20,12 @@
         <legend>Filters</legend>
         <label class="field-full"><span>Field (searches all its roles)</span>
           <div class="chipselect" id="fields"></div></label>
-        <label class="row"><span>Job count <small>(max 10k)</small></span><input type="number" id="job_count" min="1" max="10000" value="10"></label>
+        <label class="row"><span>Job count <small id="jobcount-hint">(max 3,000)</small></span><input type="text" inputmode="numeric" class="numsep" id="job_count" data-min="1" data-max="3000" value="10"></label>
         <label class="field-full"><span>Locations</span>
           <div class="chipselect" id="locsel"></div></label>
         <label class="row"><span>Allow remote anywhere</span><input type="checkbox" id="remote_ok"></label>
         <label class="row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0"></label>
-        <label class="row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000"></label>
+        <label class="row"><span>Min salary ($)</span><input type="text" inputmode="numeric" class="numsep" id="min_salary"></label>
         <label class="row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05"></label>
         <label class="row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
         <label class="row"><span>Estimate missing pay</span><input type="checkbox" id="estimate_salary"></label>
@@ -33,9 +33,9 @@
 
       <fieldset>
         <legend>Highlight thresholds</legend>
-        <label class="row"><span>Salary light ($)</span><input type="number" id="salary_light" min="0" step="1000"></label>
-        <label class="row"><span>Salary strong ($)</span><input type="number" id="salary_strong" min="0" step="1000"></label>
-        <label class="row"><span>Startup max headcount</span><input type="number" id="startup_max" min="0"></label>
+        <label class="row"><span>Salary light ($)</span><input type="text" inputmode="numeric" class="numsep" id="salary_light"></label>
+        <label class="row"><span>Salary strong ($)</span><input type="text" inputmode="numeric" class="numsep" id="salary_strong"></label>
+        <label class="row"><span>Startup max headcount</span><input type="text" inputmode="numeric" class="numsep" id="startup_max"></label>
       </fieldset>
 
       <fieldset>
@@ -57,9 +57,10 @@
   </aside>
 
   <main>
+    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
     <div class="status" id="status">Loading profile…</div>
     <section class="runview" id="runview" hidden>
-      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-note" id="run-note">mock · $0</span></div>
+      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-target" id="run-target"></span><span class="run-note" id="run-note">mock · $0</span></div>
       <div class="bars">
         <div class="barrow"><span class="barlabel">Apify load</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 10</span></div>
         <div class="barrow"><span class="barlabel">Post-process</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 10</span></div>
