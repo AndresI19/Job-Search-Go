@@ -294,11 +294,34 @@ function emptyMsg() {
   if (activeTab === 'aggregate') return 'No persisted listings yet — an admin live run fills this.';
   return 'Set your filters, then press <b>Run</b> to fetch a suite of jobs.';
 }
+// The active facet filter (company + location): OR within a facet, AND across facets;
+// an empty facet imposes no constraint. Shared by the table render AND the tab counts,
+// so a badge can never claim more than the table actually shows.
+const anyFacet = () => catFilter.size > 0 || locFilter.size > 0;
+function facetFilter(rows, columns) {
+  if (!anyFacet()) return rows;
+  const cc = columns.indexOf('company');
+  const lc = columns.indexOf('location');
+  return rows.filter(r => {
+    const okCat = !catFilter.size || (cc >= 0 && catFilter.has(FILL_CAT[r.cells[cc] && r.cells[cc].fill]));
+    const okLoc = !locFilter.size || (lc >= 0 && locFilter.has(normalizeLocation(r.cells[lc] ? r.cells[lc].value : '')));
+    return okCat && okLoc;
+  });
+}
 function renderTabs() {
   const t = $('tabs'); if (!t) return;
   for (const btn of t.querySelectorAll('.tab-btn')) btn.classList.toggle('active', btn.dataset.tab === activeTab);
-  const sc = $('saved-count'); if (sc) sc.textContent = pinned.size;      // starred
-  const ac = $('applied-count'); if (ac) ac.textContent = applied.size;   // applied
+  // Badge shows the total you saved, or "shown / total" whenever fewer are on screen than
+  // saved — so an active filter (or any hidden row) can never make the count a lie.
+  const idx = savedColumns.indexOf('title');
+  const keyOf = r => r.__key || rowKeyOf(r, idx);
+  const badge = (el, total, set) => {
+    if (!el) return;
+    const shown = facetFilter(savedRows.filter(r => set.has(keyOf(r))), savedColumns).length;
+    el.textContent = shown < total ? `${shown} / ${total}` : String(total);
+  };
+  badge($('saved-count'), pinned.size, pinned);   // starred
+  badge($('applied-count'), applied.size, applied); // applied
   // The Aggregate-only controls (New-only + Refresh) show only on that tab.
   const ctl = $('agg-controls'); if (ctl) ctl.hidden = activeTab !== 'aggregate';
 }
@@ -311,22 +334,11 @@ function render() {
     return;
   }
   const { columns } = data;
-  let rows = data.rows;
-  // Faceted filter (not sort): OR within a facet, AND across facets. A row is kept when
-  // it matches the selected company categories (by cell fill) AND the selected locations
-  // (by normalized label). An empty facet imposes no constraint. F500 is matched before
-  // F1000, so the F1000 chip is the 501–1000 tier; combine chips to widen.
-  if (catFilter.size || locFilter.size) {
-    const cc = columns.indexOf('company');
-    const lc = columns.indexOf('location');
-    rows = rows.filter(r => {
-      const okCat = !catFilter.size || (cc >= 0 && catFilter.has(FILL_CAT[r.cells[cc] && r.cells[cc].fill]));
-      const okLoc = !locFilter.size || (lc >= 0 && locFilter.has(normalizeLocation(r.cells[lc] ? r.cells[lc].value : '')));
-      return okCat && okLoc;
-    });
-  }
+  // Faceted filter (not sort), via the shared helper so the tab counts stay in lock-step.
+  // F500 is matched before F1000, so the F1000 chip is the 501–1000 tier; combine to widen.
+  let rows = facetFilter(data.rows, columns);
   if (!rows.length) {
-    $('table').outerHTML = '<div class="empty" id="table">' + ((catFilter.size || locFilter.size) ? 'No listings match the selected filters.' : 'No listings match this profile.') + '</div>';
+    $('table').outerHTML = '<div class="empty" id="table">' + (anyFacet() ? 'No listings match the selected filters.' : 'No listings match this profile.') + '</div>';
     $('pager').innerHTML = '';
     return;
   }
