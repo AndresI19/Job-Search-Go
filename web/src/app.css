@@ -144,6 +144,29 @@
   .count { font-weight: 800; color: var(--ink); }
   .resbar { display: flex; gap: 8px; margin-bottom: 8px; }
   .rbtn { font-size: 12px; padding: 5px 12px; }
+  .rbtn.accent { background: var(--accent); color: var(--accent-ink); border-color: transparent; }
+  .rbtn.accent:hover { filter: brightness(1.08); }
+  /* Applicator table: required/preferred experience (colour-coded), employment badge, contract-aware comp. */
+  td.chk { text-align: center; width: 34px; }
+  .app-applied { width: 16px; height: 16px; accent-color: #1f9d6b; cursor: pointer; }
+  td.co .loc { display: block; font-weight: 500; color: var(--muted); font-size: 11px; margin-top: 2px; }
+  td.co { font-weight: 700; }
+  td.txt { color: var(--ink); min-width: 150px; }
+  td.exp { min-width: 210px; }
+  .exline { display: block; }
+  .exline + .exline { margin-top: 3px; }
+  .exline.req { color: #c0392b; }
+  .exline.pref { color: #1f7a5a; }
+  .exlabel { display: inline-block; font-size: 9px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; padding: 1px 5px; border-radius: 5px; margin-right: 5px; vertical-align: 1px; }
+  .exline.req .exlabel { background: #fbe9e7; color: #c0392b; }
+  .exline.pref .exlabel { background: #e4f4ec; color: #1f7a5a; }
+  .emp-badge { display: inline-block; margin-left: 6px; padding: 1px 7px; border-radius: 999px; font-size: 9.5px; font-weight: 800; text-transform: uppercase; letter-spacing: .04em; vertical-align: middle; }
+  .emp-badge.contract { background: #fdeccf; color: #9a6a1a; border: 1px solid #d8b45a; }
+  .emp-badge.perm { background: var(--panel-2); color: var(--muted); border: 1px solid var(--line); }
+  .sal { font-weight: 700; }
+  .sal.est { font-weight: 600; color: var(--muted); font-style: italic; }
+  .sal.contract { color: #9a6a1a; }
+  td.sal .muted, .muted { color: var(--muted); }
 
   /* The results table is a panel card, matching the aside. */
   .tablewrap {

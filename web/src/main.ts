@@ -324,6 +324,8 @@ function renderTabs() {
   badge($('applied-count'), applied.size, applied); // applied
   // The Aggregate-only controls (New-only + Refresh) show only on that tab.
   const ctl = $('agg-controls'); if (ctl) ctl.hidden = activeTab !== 'aggregate';
+  const sc2 = $('saved-controls'); if (sc2) sc2.hidden = activeTab !== 'saved';
+  const ac2 = $('applicator-controls'); if (ac2) ac2.hidden = activeTab !== 'applicator';
 }
 function render() {
   renderTabs();
@@ -598,7 +600,9 @@ document.addEventListener('keydown', e => { if (e.key === 'Escape' && !$('filter
 document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('click', () => {
   activeTab = b.dataset.tab;
   sortState = { col: -1, dir: 1 }; page = 0;
-  if (activeTab === 'aggregate') loadAggregate(); else render();
+  if (activeTab === 'aggregate') loadAggregate();
+  else if (activeTab === 'applicator') loadApplicator();
+  else render();
 }));
 
 // Aggregate tab: fetch the persisted listings (all, or just the latest scan when
@@ -832,6 +836,116 @@ $('toggle').addEventListener('click', () => {
   });
   wrap.addEventListener('mouseleave', () => { cur = null; hide(); });
 })();
+
+// ===== Applicator: batch-summarized apply page for saved, not-yet-applied jobs =====
+let applicatorData = { jobs: [], summarized: 0 };
+let empFilter = '';   // '' | 'contract' | 'permanent'
+let appPollTimer = 0;
+const kApp = n => '$' + Math.round(n / 1000) + 'k';
+
+function showApplicatorLoading(on) {
+  $('applicator-loading').hidden = !on;
+  document.querySelector('.tablewrap').style.display = on ? 'none' : '';
+}
+async function launchApplicator() {
+  clearTimeout(appPollTimer);
+  const btn = $('launch-applicator'); if (btn) btn.disabled = true;
+  setBar('applicator', 0, 0);
+  showApplicatorLoading(true);
+  try {
+    const res = role === 'admin'
+      ? await authFetch(api('applicator/launch'), { method: 'POST' })
+      : await fetch(api('applicator/launch'), { method: 'POST' });
+    if (!res) throw new Error('Sign in as an admin to launch the Applicator.');
+    if (!res.ok) throw new Error(await res.text());
+    pollApplicator((await res.json()).id);
+  } catch (e) { setStatus(e.message, true); showApplicatorLoading(false); if (btn) btn.disabled = false; }
+}
+async function pollApplicator(id) {
+  try {
+    const res = await fetch(api('applicator/status') + '?id=' + encodeURIComponent(id));
+    if (!res.ok) throw new Error(await res.text());
+    const j = await res.json();
+    setBar('applicator', j.done, j.total);
+    if (j.status === 'done') {
+      showApplicatorLoading(false);
+      const btn = $('launch-applicator'); if (btn) btn.disabled = false;
+      activeTab = 'applicator'; renderTabs();
+      await loadApplicator();
+      setStatus(`Applicator ready — ${applicatorData.jobs.length} jobs to apply to.`);
+      return;
+    }
+    if (j.status === 'error') { setStatus(j.error || 'summarize failed', true); showApplicatorLoading(false); return; }
+    appPollTimer = setTimeout(() => pollApplicator(id), 500);
+  } catch (e) { setStatus(e.message, true); showApplicatorLoading(false); }
+}
+async function loadApplicator() {
+  try {
+    let res = await authFetch(api('applicator'));
+    if (!res) res = await fetch(api('applicator'));
+    applicatorData = (res && res.ok) ? await res.json() : { jobs: [], summarized: 0 };
+  } catch (e) { applicatorData = { jobs: [], summarized: 0 }; }
+  renderApplicator();
+}
+// Comp is contract-aware: a contract role is not a salaried one, so we show its rate
+// note (or "rate n/a") rather than the misleading annualized figure.
+function compHTML(j) {
+  if (j.contract) return j.payNote ? `<span class="sal contract">${esc(j.payNote)}</span>` : '<span class="muted">contract · rate n/a</span>';
+  if (j.smin || j.smax) return `<span class="sal">${j.smin && j.smax ? kApp(j.smin) + '–' + kApp(j.smax) : kApp(j.smin || j.smax)}</span>`;
+  if (j.emin || j.emax) return `<span class="sal est">~${kApp(j.emin || j.emax)}–${kApp(j.emax || j.emin)}</span>`;
+  return '<span class="muted">—</span>';
+}
+function applyRowHTML(j) {
+  const badge = j.contract ? '<span class="emp-badge contract">Contract</span>' : '<span class="emp-badge perm">Permanent</span>';
+  const loc = j.lp ? `<span class="loc">${esc(j.lp)}</span>` : '';
+  return `<tr>
+    <td class="chk"><input type="checkbox" class="app-applied" data-u="${esc(j.u)}" title="Mark applied — syncs to your Applied tab and removes it here" aria-label="mark applied"></td>
+    <td class="co">${esc(j.c) || '—'}${loc}</td>
+    <td class="ti"><a href="${esc(j.apply)}" target="_blank" rel="noopener">${esc(j.t) || '—'}</a>${badge}</td>
+    <td class="sal">${compHTML(j)}</td>
+    <td class="txt exp"><span class="exline req"><span class="exlabel">Req</span>${esc(j.required) || '—'}</span><span class="exline pref"><span class="exlabel">Pref</span>${esc(j.preferred) || '—'}</span></td>
+    <td class="txt">${esc(j.role) || '—'}</td>
+    <td class="txt">${esc(j.does) || '—'}</td>
+    <td class="ap"><a class="apply" href="${esc(j.apply)}" target="_blank" rel="noopener">Apply ↗</a></td>
+  </tr>`;
+}
+function renderApplicator() {
+  renderTabs();
+  const all = applicatorData.jobs || [];
+  const jobs = all.filter(j => !empFilter || (empFilter === 'contract' ? j.contract : !j.contract));
+  document.querySelectorAll('#applicator-controls .fchip').forEach(c => c.classList.toggle('sel', c.dataset.emp === empFilter));
+  if (!jobs.length) {
+    const msg = all.length ? 'No jobs match the type filter.' : 'No saved jobs to apply to yet — star some jobs, then hit ⚡ Launch Applicator.';
+    $('table').outerHTML = '<div class="empty" id="table">' + msg + '</div>';
+    $('pager').innerHTML = '';
+    return;
+  }
+  const head = '<th class="chk" title="Mark applied">✓</th><th>Company</th><th>Title</th><th>Comp</th><th>Experience — required / preferred</th><th>What the role does</th><th>What the company does</th><th>Apply</th>';
+  $('table').outerHTML = `<table id="table"><thead><tr>${head}</tr></thead><tbody>${jobs.map(applyRowHTML).join('')}</tbody></table>`;
+  document.querySelectorAll('#table .app-applied').forEach(cb => cb.addEventListener('change', () => markApplied(cb)));
+  const pending = all.length - (applicatorData.summarized || 0);
+  $('pager').innerHTML = `<span>${jobs.length} to apply${pending > 0 ? ` · ${pending} not yet summarized — hit Update` : ''}</span>`;
+}
+async function markApplied(cb) {
+  const u = cb.dataset.u; if (!u) return;
+  cb.disabled = true;
+  try {
+    // Keep it pinned (stays in Saved) and set applied — the server writes both flags.
+    const opts = { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ url: u, pinned: true, applied: true }) };
+    const res = role === 'admin' ? await authFetch(api('saved'), opts) : await fetch(api('saved'), opts);
+    if (!res || !res.ok) throw new Error('Sign in to sync applied.');
+    applied.add(u); saveApplied();
+    applicatorData.jobs = applicatorData.jobs.filter(j => j.u !== u);
+    renderApplicator();
+    setStatus('Marked applied — moved to your Applied tab.');
+  } catch (e) { cb.disabled = false; cb.checked = false; setStatus(e.message, true); }
+}
+$('launch-applicator')?.addEventListener('click', launchApplicator);
+$('relaunch-applicator')?.addEventListener('click', launchApplicator);
+document.querySelectorAll('#applicator-controls .fchip').forEach(c => c.addEventListener('click', () => {
+  empFilter = empFilter === c.dataset.emp ? '' : c.dataset.emp;
+  renderApplicator();
+}));
 
 wireThousands(); // comma-format the numeric inputs and enforce the job-count cap on blur
 updateJobCountMax(); // set the initial max/hint from the default selected locations

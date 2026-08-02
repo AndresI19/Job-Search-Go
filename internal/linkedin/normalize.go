@@ -33,6 +33,7 @@ type record struct {
 	CompanyEmployeesCount int    `json:"companyEmployeesCount"`
 	Industries            string `json:"industries"`
 	SeniorityLevel        string `json:"seniorityLevel"`
+	EmploymentType        string `json:"employmentType"`
 	DescriptionText       string `json:"descriptionText"`
 	DescriptionHTML       string `json:"descriptionHtml"`
 }
@@ -66,6 +67,7 @@ func Normalize(raw []json.RawMessage) []model.Listing {
 			CompanyURL:       r.CompanyURL,
 			CompanySize:      r.CompanyEmployeesCount,
 			Industries:       r.Industries,
+			EmploymentType:   r.EmploymentType,
 			Location:         r.Location,
 			Remote:           isRemote(r.Location, desc),
 			Posted:           parseDate(r.PostedAt),

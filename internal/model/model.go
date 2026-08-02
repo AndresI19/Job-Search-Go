@@ -20,6 +20,7 @@ type Listing struct {
 	CompanyURL       string // canonical company handle — the verification join key
 	CompanySize      int    // company headcount; 0 when unknown — a startup signal
 	Industries       string // LinkedIn industry classification, e.g. "Software Development"
+	EmploymentType   string // source-reported type, e.g. "Full-time" / "Contract"; "" when unknown
 	Location         string
 	Remote           bool
 	Posted           time.Time // zero value when unknown
@@ -33,6 +34,19 @@ type Listing struct {
 	ExternalApplyURL string    // set when ApplyType == "external"
 	URL              string    // canonical posting URL
 	Description      string    // plain text, HTML stripped
+}
+
+// JobSummary is the apply-ready summary of a listing's description shown on the
+// Applicator page: what the posting requires vs prefers, what the role does, what
+// the company does, and whether it is contract or permanent work. Every field is a
+// single plain line; Employment is "contract", "permanent", or "unclear".
+type JobSummary struct {
+	Required   string
+	Preferred  string
+	Role       string
+	Company    string
+	Employment string
+	PayNote    string
 }
 
 // Confidence is a coarse legitimacy bucket for a verified Listing.
