@@ -794,9 +794,13 @@ $('toggle').addEventListener('click', () => {
 
 // ===== Applicator: batch-summarized apply page for saved, not-yet-applied jobs =====
 let applicatorData = { jobs: [], summarized: 0 };
-let empFilter = '';   // '' | 'contract' | 'permanent'
+let empFilter = '';   // '' | 'salary' | 'nosalary'
 let appPollTimer = 0;
 const kApp = n => '$' + Math.round(n / 1000) + 'k';
+// A posting is "Salary" iff it carries a concrete scraped pay range (not the
+// always-present estimate). Everything else is treated as contract/unlisted — this
+// hard signal replaces the flaky LLM permanent/contract guess and works retroactively.
+const hasSalary = j => !!(j.smin || j.smax);
 
 function showApplicatorLoading(on) {
   $('applicator-loading').hidden = !on;
@@ -842,16 +846,17 @@ async function loadApplicator() {
   } catch (e) { applicatorData = { jobs: [], summarized: 0 }; }
   renderApplicator();
 }
-// Comp is contract-aware: a contract role is not a salaried one, so we show its rate
-// note (or "rate n/a") rather than the misleading annualized figure.
+// Comp keys off the posted salary: a concrete range shows as-is; otherwise the role
+// is treated as contract/unlisted, so we surface the extracted rate note if Claude
+// found one, else the estimate, rather than a misleading annualized figure.
 function compHTML(j) {
-  if (j.contract) return j.payNote ? `<span class="sal contract">${esc(j.payNote)}</span>` : '<span class="muted">contract · rate n/a</span>';
-  if (j.smin || j.smax) return `<span class="sal">${j.smin && j.smax ? kApp(j.smin) + '–' + kApp(j.smax) : kApp(j.smin || j.smax)}</span>`;
+  if (hasSalary(j)) return `<span class="sal">${j.smin && j.smax ? kApp(j.smin) + '–' + kApp(j.smax) : kApp(j.smin || j.smax)}</span>`;
+  if (j.payNote) return `<span class="sal contract">${esc(j.payNote)}</span>`;
   if (j.emin || j.emax) return `<span class="sal est">~${kApp(j.emin || j.emax)}–${kApp(j.emax || j.emin)}</span>`;
-  return '<span class="muted">—</span>';
+  return '<span class="muted">rate n/a</span>';
 }
 function applyRowHTML(j) {
-  const badge = j.contract ? '<span class="emp-badge contract">Contract</span>' : '<span class="emp-badge perm">Permanent</span>';
+  const badge = hasSalary(j) ? '<span class="emp-badge perm">Salary</span>' : '<span class="emp-badge contract">No salary</span>';
   const loc = j.lp ? `<span class="loc">${esc(j.lp)}</span>` : '';
   return `<tr>
     <td class="chk"><input type="checkbox" class="app-applied" data-u="${esc(j.u)}" title="Mark applied — syncs to your Applied tab and removes it here" aria-label="mark applied"></td>
@@ -867,10 +872,10 @@ function applyRowHTML(j) {
 function renderApplicator() {
   renderTabs();
   const all = applicatorData.jobs || [];
-  const jobs = all.filter(j => !empFilter || (empFilter === 'contract' ? j.contract : !j.contract));
+  const jobs = all.filter(j => !empFilter || (empFilter === 'salary' ? hasSalary(j) : !hasSalary(j)));
   document.querySelectorAll('#applicator-controls .fchip').forEach(c => c.classList.toggle('sel', c.dataset.emp === empFilter));
   if (!jobs.length) {
-    const msg = all.length ? 'No jobs match the type filter.' : 'No saved jobs to apply to yet — star some jobs, then hit ⚡ Launch Applicator.';
+    const msg = all.length ? 'No jobs match the pay filter.' : 'No saved jobs to apply to yet — star some jobs, then hit ⚡ Launch Applicator.';
     $('table').outerHTML = '<div class="empty" id="table">' + msg + '</div>';
     $('pager').innerHTML = '';
     return;
