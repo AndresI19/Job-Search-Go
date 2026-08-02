@@ -41,6 +41,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/report"
 	"github.com/AndresI19/Job-Search-Go/internal/score"
 	"github.com/AndresI19/Job-Search-Go/internal/secret"
+	"github.com/AndresI19/Job-Search-Go/internal/summarize"
 	"github.com/AndresI19/Job-Search-Go/internal/watchlist"
 )
 
@@ -64,7 +65,7 @@ func main() {
 	base := normBase(os.Getenv("BASE_PATH"))
 	s := &server{
 		profPath: *profPath, cachePath: *cachePath, base: base,
-		appVersion: readVersion(), jobs: map[string]*jobState{},
+		appVersion: readVersion(), jobs: map[string]*jobState{}, appJobs: map[string]*applicatorJob{},
 	}
 
 	// Platform identity. In-cluster (AUTH_JWKS_URI set) admin is a verified signed
@@ -99,6 +100,16 @@ func main() {
 		fmt.Fprintf(os.Stderr, "note: Admin (real) runs unavailable — %v; Admin will fall back to mock\n", err)
 	}
 
+	// Applicator summaries (Claude). Independent of Apify — needs only the DB and a
+	// summarizer backend (SUMMARIZE_BACKEND, else JUDGE_BACKEND). Best-effort: a
+	// launch just reports "unavailable" if this failed to wire.
+	s.sumModel = envOr("SUMMARIZE_MODEL", envOr("JUDGE_MODEL", "claude-haiku-4-5"))
+	if sm, serr := summarize.FromEnv(); serr != nil {
+		fmt.Fprintf(os.Stderr, "note: Applicator summaries unavailable — %v\n", serr)
+	} else {
+		s.summarizer = sm
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"api/config", s.config)
 	mux.HandleFunc(base+"api/profile", s.profile)
@@ -110,6 +121,9 @@ func main() {
 	mux.HandleFunc(base+"api/listings", s.listings)
 	mux.HandleFunc(base+"api/refresh", s.refresh)
 	mux.HandleFunc(base+"api/saved", s.saved)
+	mux.HandleFunc(base+"api/applicator/launch", s.applicatorLaunch)
+	mux.HandleFunc(base+"api/applicator/status", s.applicatorStatus)
+	mux.HandleFunc(base+"api/applicator", s.applicator)
 	mux.HandleFunc(base+"api/health", s.health)
 	mux.HandleFunc(base+"version", s.version)
 	mux.Handle(base, s.static())
@@ -227,16 +241,21 @@ type server struct {
 	auth                *auth.Verifier // nil = no platform auth (local dev)
 	db                  *db.DB         // nil/disabled = no persistence (mock + localStorage only)
 	// Real-run dependencies — nil unless the environment enabled them.
-	realReady bool
-	spends    bool // true only when real runs use real (non-mock) backends
-	actorID   string
-	apify     *apify.Client
-	resolver  *ats.Resolver
-	judge     judge.Judge
+	realReady  bool
+	spends     bool // true only when real runs use real (non-mock) backends
+	actorID    string
+	apify      *apify.Client
+	resolver   *ats.Resolver
+	judge      judge.Judge
+	summarizer summarize.Summarizer // nil = Applicator summaries unavailable
+	sumModel   string               // model id summaries are tagged with
 
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
 	jobSeq atomic.Int64
+
+	appMu   sync.Mutex
+	appJobs map[string]*applicatorJob
 
 	// lastRows is the most recent result set (preview or run), kept so it can be
 	// exported to a portable CSV and re-imported later.
@@ -811,10 +830,7 @@ func (s *server) refresh(w http.ResponseWriter, r *http.Request) {
 // user's flags keyed by URL (empty for a guest or without a DB); PUT upserts one URL
 // and requires an identity — a guest keeps its saved state in the browser instead.
 func (s *server) saved(w http.ResponseWriter, r *http.Request) {
-	userID := ""
-	if s.auth != nil {
-		userID, _ = s.auth.Identity(r)
-	}
+	userID := s.userID(r)
 	switch r.Method {
 	case http.MethodGet:
 		// Return each saved job WITH its row data (not just the flag), so the Saved/
@@ -864,6 +880,198 @@ func (s *server) saved(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 	}
+}
+
+// userID resolves the caller's platform identity: the verified auth claim when
+// auth is configured (in-cluster), else DEV_USER_ID for local dev ("" when unset,
+// which the saved/applicator queries treat as no user).
+func (s *server) userID(r *http.Request) string {
+	if s.auth != nil {
+		id, _ := s.auth.Identity(r)
+		return id
+	}
+	return os.Getenv("DEV_USER_ID")
+}
+
+// applicatorJob is one Applicator batch's live progress: how many of the
+// saved-not-applied listings have been summarized so far.
+type applicatorJob struct {
+	mu     sync.Mutex
+	id     string
+	status string // running | done | error
+	done   int
+	total  int
+	errMsg string
+}
+
+func (a *applicatorJob) snapshot() map[string]any {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	m := map[string]any{"id": a.id, "status": a.status, "done": a.done, "total": a.total}
+	if a.errMsg != "" {
+		m["error"] = a.errMsg
+	}
+	return m
+}
+
+// applicatorLaunch starts a batch summarizing every saved-but-not-applied listing
+// that lacks a cached summary, storing each in job_summaries (so re-launch is
+// incremental). Admin-gated under configured auth — it spends Claude tokens.
+func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.auth != nil && !s.auth.IsAdmin(r) {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+		http.Error(w, "sign in as an admin to launch the Applicator", http.StatusUnauthorized)
+		return
+	}
+	if s.summarizer == nil {
+		http.Error(w, "summaries are unavailable — no Claude backend configured", http.StatusServiceUnavailable)
+		return
+	}
+	userID := s.userID(r)
+	saved, err := s.db.SavedNotApplied(r.Context(), userID)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	urls := make([]string, 0, len(saved))
+	for _, sl := range saved {
+		urls = append(urls, sl.Result.Listing.URL)
+	}
+	have, err := s.db.SummariesFor(r.Context(), urls)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	var todo []model.Listing
+	for _, sl := range saved {
+		if _, ok := have[sl.Result.Listing.URL]; !ok {
+			todo = append(todo, sl.Result.Listing)
+		}
+	}
+
+	id := "app-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
+	job := &applicatorJob{id: id, status: "running", total: len(todo)}
+	s.appMu.Lock()
+	s.appJobs[id] = job
+	s.appMu.Unlock()
+
+	// Summarize concurrently; the summarizer is already Bounded, so goroutines queue
+	// at its semaphore rather than flooding Claude.
+	go func() {
+		ctx := context.Background()
+		var wg sync.WaitGroup
+		for _, l := range todo {
+			wg.Add(1)
+			go func(l model.Listing) {
+				defer wg.Done()
+				sum, serr := s.summarizer.Summarize(ctx, l)
+				if serr != nil {
+					fmt.Fprintf(os.Stderr, "applicator: summarize %s: %v\n", l.URL, serr)
+				} else if uerr := s.db.UpsertSummary(ctx, l.URL, sum, s.sumModel); uerr != nil {
+					fmt.Fprintf(os.Stderr, "applicator: store summary %s: %v\n", l.URL, uerr)
+				}
+				job.mu.Lock()
+				job.done++
+				job.mu.Unlock()
+			}(l)
+		}
+		wg.Wait()
+		job.mu.Lock()
+		job.status = "done"
+		job.mu.Unlock()
+	}()
+
+	writeJSON(w, map[string]string{"id": id})
+}
+
+// applicatorStatus reports a launch's progress for the loading screen.
+func (s *server) applicatorStatus(w http.ResponseWriter, r *http.Request) {
+	s.appMu.Lock()
+	job := s.appJobs[r.URL.Query().Get("id")]
+	s.appMu.Unlock()
+	if job == nil {
+		http.Error(w, "no such applicator job", http.StatusNotFound)
+		return
+	}
+	writeJSON(w, job.snapshot())
+}
+
+// applyRow is one Applicator table row: the listing's key fields plus its cached
+// summary and a contract flag (contract work is not comparable to a salaried role).
+type applyRow struct {
+	U          string `json:"u"`     // canonical URL — the applied-sync key
+	Apply      string `json:"apply"` // where the browser opens to apply
+	Company    string `json:"c"`
+	Title      string `json:"t"`
+	Loc        string `json:"lp"`
+	Remote     bool   `json:"r"`
+	SalMin     int    `json:"smin"`
+	SalMax     int    `json:"smax"`
+	EstMin     int    `json:"emin"`
+	EstMax     int    `json:"emax"`
+	Required   string `json:"required"`
+	Preferred  string `json:"preferred"`
+	Role       string `json:"role"`
+	Does       string `json:"does"`
+	PayNote    string `json:"payNote"`
+	Employment string `json:"employment"`
+	Contract   bool   `json:"contract"`
+	Available  bool   `json:"a"`
+}
+
+// applicator returns the current user's saved-not-applied jobs joined with their
+// cached summaries — the Applicator table data. Rows with no summary yet show
+// blanks (a launch fills them in).
+func (s *server) applicator(w http.ResponseWriter, r *http.Request) {
+	userID := s.userID(r)
+	saved, err := s.db.SavedNotApplied(r.Context(), userID)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	urls := make([]string, 0, len(saved))
+	for _, sl := range saved {
+		urls = append(urls, sl.Result.Listing.URL)
+	}
+	summaries, err := s.db.SummariesFor(r.Context(), urls)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	rows := make([]applyRow, 0, len(saved))
+	summarized := 0
+	for _, sl := range saved {
+		l := sl.Result.Listing
+		sum, ok := summaries[l.URL]
+		if ok {
+			summarized++
+		}
+		contract := sum.Employment == "contract" || strings.Contains(strings.ToLower(l.EmploymentType), "contract")
+		apply := l.URL
+		if l.ExternalApplyURL != "" {
+			apply = l.ExternalApplyURL
+		}
+		rows = append(rows, applyRow{
+			U: l.URL, Apply: apply, Company: l.Company, Title: l.Title,
+			Loc: locPrefix(l.Location), Remote: l.Remote,
+			SalMin: l.SalaryMin, SalMax: l.SalaryMax, EstMin: l.SalaryEstMin, EstMax: l.SalaryEstMax,
+			Required: sum.Required, Preferred: sum.Preferred, Role: sum.Role, Does: sum.Company,
+			PayNote: sum.PayNote, Employment: sum.Employment, Contract: contract, Available: sl.Available,
+		})
+	}
+	writeJSON(w, map[string]any{"jobs": rows, "total": len(rows), "summarized": summarized})
+}
+
+// locPrefix is the label before the first comma of a location ("Boston, MA" → "Boston").
+func locPrefix(s string) string {
+	if i := strings.IndexByte(s, ','); i > 0 {
+		return strings.TrimSpace(s[:i])
+	}
+	return strings.TrimSpace(s)
 }
 
 // deadURLs HEAD-checks each candidate's apply URL and returns the dedup URLs that

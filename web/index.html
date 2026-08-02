@@ -67,15 +67,31 @@
         <div class="barrow"><span class="barlabel">Rate limit</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
       </div>
     </section>
+    <section class="runview" id="applicator-loading" hidden>
+      <div class="run-head"><h2>Summarizing your saved jobs…</h2><span class="run-note">Claude is reading each posting</span></div>
+      <div class="bars"><div class="barrow"><span class="barlabel">Summarized</span><div class="bar"><i class="bar-fill" id="bar-applicator"></i></div><span class="barnum" id="num-applicator">0 / 0</span></div></div>
+    </section>
     <div class="tabs" id="tabs">
       <button class="tab-btn active" data-tab="results">Results</button>
       <button class="tab-btn" data-tab="aggregate" title="Every listing persisted across scans, deduplicated">Aggregate</button>
       <button class="tab-btn" data-tab="saved" title="Jobs you starred">★ Saved <span class="tab-count" id="saved-count">0</span></button>
       <button class="tab-btn" data-tab="applied" title="Jobs you ticked as applied">✓ Applied <span class="tab-count" id="applied-count">0</span></button>
+      <button class="tab-btn" data-tab="applicator" title="A batch-summarized apply page for your saved, not-yet-applied jobs">⚡ Applicator</button>
       <!-- Aggregate-only controls: highlight just the latest scan, and prune dead listings. -->
       <span class="agg-controls" id="agg-controls" hidden>
         <label class="agg-new" title="Show only what the most recent scan added"><input type="checkbox" id="agg-new-only"> ✨ New only</label>
         <button class="rbtn" id="refresh-btn" title="Check each listing and remove ones that are no longer available (admin)">↻&nbsp; Refresh</button>
+      </span>
+      <!-- Saved-tab control: kick off the Applicator batch over your not-yet-applied saved jobs. -->
+      <span class="agg-controls" id="saved-controls" hidden>
+        <button class="rbtn accent" id="launch-applicator" title="Summarize all your saved, not-yet-applied jobs into an apply page (admin, uses Claude)">⚡&nbsp; Launch Applicator</button>
+      </span>
+      <!-- Applicator-tab controls: filter by employment type and re-summarize newly saved jobs. -->
+      <span class="agg-controls" id="applicator-controls" hidden>
+        <span class="filt-label">Type</span>
+        <button class="fchip" data-emp="contract">Contract</button>
+        <button class="fchip" data-emp="permanent">Permanent</button>
+        <button class="rbtn" id="relaunch-applicator" title="Summarize any newly saved jobs missing a summary">↻&nbsp; Update</button>
       </span>
     </div>
     <div class="resbar">

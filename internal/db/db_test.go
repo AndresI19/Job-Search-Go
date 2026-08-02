@@ -250,6 +250,46 @@ func TestSavedListingsSurviveRefreshSweep(t *testing.T) {
 	}
 }
 
+// The Applicator's data path: SavedNotApplied narrows to the apply backlog, and
+// job_summaries round-trips + upserts by canonical URL.
+func TestApplicatorSummariesAndBacklog(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	const user = "user-app"
+	run, _ := d.StartRun(ctx, "software", 2)
+	must(t, d.UpsertResults(ctx, run, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
+	must(t, d.SetSaved(ctx, user, "https://a", SavedFlags{Pinned: true}))
+	must(t, d.SetSaved(ctx, user, "https://b", SavedFlags{Pinned: true, Applied: true})) // applied ⇒ off the backlog
+
+	na, err := d.SavedNotApplied(ctx, user)
+	must(t, err)
+	if len(na) != 1 || na[0].Result.Listing.URL != "https://a" {
+		t.Fatalf("SavedNotApplied = %+v, want exactly [https://a]", na)
+	}
+
+	got, err := d.SummariesFor(ctx, []string{"https://a"})
+	must(t, err)
+	if len(got) != 0 {
+		t.Fatalf("expected no summaries yet, got %v", got)
+	}
+	must(t, d.UpsertSummary(ctx, "https://a",
+		model.JobSummary{Required: "5y Go", Preferred: "K8s", Role: "Build", Company: "SaaS", Employment: "contract", PayNote: "$90/hr"}, "haiku"))
+	got, err = d.SummariesFor(ctx, []string{"https://a", "https://b"})
+	must(t, err)
+	if s := got["https://a"]; s.Employment != "contract" || s.PayNote != "$90/hr" || s.Required != "5y Go" {
+		t.Fatalf("summary round-trip: %+v", s)
+	}
+	if _, ok := got["https://b"]; ok {
+		t.Fatal("unsummarized URL should be absent from SummariesFor")
+	}
+	// Re-upsert overwrites in place.
+	must(t, d.UpsertSummary(ctx, "https://a", model.JobSummary{Required: "3y", Employment: "permanent"}, "haiku"))
+	got, _ = d.SummariesFor(ctx, []string{"https://a"})
+	if s := got["https://a"]; s.Employment != "permanent" || s.Required != "3y" {
+		t.Fatalf("upsert did not overwrite: %+v", s)
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

@@ -97,6 +97,19 @@ CREATE TABLE IF NOT EXISTS saved (
   applied    BOOL NOT NULL DEFAULT false,
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   PRIMARY KEY (user_id, url)
+);
+-- Applicator summaries: one apply-ready summary per listing (keyed by canonical
+-- URL, not per-user), so a batch launch reuses them and re-launches are incremental.
+CREATE TABLE IF NOT EXISTS job_summaries (
+  url        TEXT PRIMARY KEY,
+  required   TEXT NOT NULL DEFAULT '',
+  preferred  TEXT NOT NULL DEFAULT '',
+  role       TEXT NOT NULL DEFAULT '',
+  company    TEXT NOT NULL DEFAULT '',
+  employment TEXT NOT NULL DEFAULT '',
+  pay_note   TEXT NOT NULL DEFAULT '',
+  model      TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );`
 
 // Migrate creates the tables if absent. Idempotent; safe to run every boot.
@@ -313,6 +326,80 @@ func (d *DB) SavedListings(ctx context.Context, userID string) ([]SavedListing, 
 		out = append(out, sl)
 	}
 	return out, rows.Err()
+}
+
+// SavedNotApplied returns the user's saved-but-not-yet-applied listings (pinned
+// AND NOT applied) with their row data — the set the Applicator summarizes. Same
+// join as SavedListings, narrowed to the apply backlog.
+func (d *DB) SavedNotApplied(ctx context.Context, userID string) ([]SavedListing, error) {
+	if !d.Enabled() || userID == "" {
+		return nil, nil
+	}
+	rows, err := d.pool.Query(ctx, `
+		SELECT l.result, s.pinned, s.applied, l.available
+		FROM saved s
+		JOIN listings l ON l.url = s.url
+		WHERE s.user_id = $1 AND s.pinned AND NOT s.applied
+		ORDER BY l.last_seen DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []SavedListing
+	for rows.Next() {
+		var raw []byte
+		var sl SavedListing
+		if err := rows.Scan(&raw, &sl.Pinned, &sl.Applied, &sl.Available); err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(raw, &sl.Result); err != nil {
+			return nil, fmt.Errorf("decode saved result: %w", err)
+		}
+		out = append(out, sl)
+	}
+	return out, rows.Err()
+}
+
+// SummariesFor returns the cached Applicator summaries for the given URLs, keyed by
+// URL. Missing URLs are simply absent — the caller summarizes those and upserts.
+func (d *DB) SummariesFor(ctx context.Context, urls []string) (map[string]model.JobSummary, error) {
+	out := map[string]model.JobSummary{}
+	if !d.Enabled() || len(urls) == 0 {
+		return out, nil
+	}
+	rows, err := d.pool.Query(ctx, `
+		SELECT url, required, preferred, role, company, employment, pay_note
+		FROM job_summaries WHERE url = ANY($1)`, urls)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var url string
+		var s model.JobSummary
+		if err := rows.Scan(&url, &s.Required, &s.Preferred, &s.Role, &s.Company, &s.Employment, &s.PayNote); err != nil {
+			return nil, err
+		}
+		out[url] = s
+	}
+	return out, rows.Err()
+}
+
+// UpsertSummary stores (or refreshes) one listing's Applicator summary, keyed by
+// the canonical URL so it is reused across users and future launches.
+func (d *DB) UpsertSummary(ctx context.Context, url string, s model.JobSummary, modelID string) error {
+	if !d.Enabled() || url == "" {
+		return nil
+	}
+	_, err := d.pool.Exec(ctx, `
+		INSERT INTO job_summaries (url, required, preferred, role, company, employment, pay_note, model, created_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8, now())
+		ON CONFLICT (url) DO UPDATE SET
+			required=EXCLUDED.required, preferred=EXCLUDED.preferred, role=EXCLUDED.role,
+			company=EXCLUDED.company, employment=EXCLUDED.employment, pay_note=EXCLUDED.pay_note,
+			model=EXCLUDED.model, created_at=now()`,
+		url, s.Required, s.Preferred, s.Role, s.Company, s.Employment, s.PayNote, modelID)
+	return err
 }
 
 // SetSaved upserts a user's flags for a URL; a row with both flags false is
