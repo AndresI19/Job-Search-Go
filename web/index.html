@@ -85,11 +85,11 @@
       <span class="agg-controls" id="saved-controls" hidden>
         <button class="rbtn accent" id="launch-applicator" title="Summarize all your saved, not-yet-applied jobs into an apply page (admin, uses Claude)">⚡&nbsp; Launch Applicator</button>
       </span>
-      <!-- Applicator-tab controls: filter by employment type and re-summarize newly saved jobs. -->
+      <!-- Applicator-tab controls: filter by whether the posting lists a salary, and re-summarize newly saved jobs. -->
       <span class="agg-controls" id="applicator-controls" hidden>
-        <span class="filt-label">Type</span>
-        <button class="fchip" data-emp="contract">Contract</button>
-        <button class="fchip" data-emp="permanent">Permanent</button>
+        <span class="filt-label">Pay</span>
+        <button class="fchip" data-emp="salary">Salary</button>
+        <button class="fchip" data-emp="nosalary">No salary</button>
         <button class="rbtn" id="relaunch-applicator" title="Summarize any newly saved jobs missing a summary">↻&nbsp; Update</button>
       </span>
     </div>
