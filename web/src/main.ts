@@ -34,56 +34,14 @@ function formatSepInput(el) {
   try { el.setSelectionRange(pos, pos); } catch (e) { /* not focused — ignore */ }
 }
 function formatAllSep() { for (const el of document.querySelectorAll('.numsep')) el.value = groupThousands(digitsOnly(el.value)); }
-const jobCountMax = () => Number($('job_count')?.dataset.max || 10000);
-// Snap job count DOWN to its ceiling the instant it's exceeded — live, as you type —
-// so an over-cap number never sits in the box (entering 5,000 with a 1,000 cap snaps
-// to 1,000 immediately, with a note, not silently and not only on blur).
-function snapJobCountMax() {
-  const el = $('job_count'); if (!el) return;
-  const max = jobCountMax();
-  if (Number(digitsOnly(el.value)) > max) {
-    el.value = groupThousands(String(max));
-    try { el.setSelectionRange(el.value.length, el.value.length); } catch (e) { /* ignore */ }
-    setStatus(`Job count capped at ${groupThousands(String(max))} — the most one run fetches.`);
-  }
-}
-// job_count's per-keystroke handler: comma-format, then snap to the ceiling if over.
-function onJobCountInput() {
-  const el = $('job_count'); if (!el) return;
-  formatSepInput(el);
-  snapJobCountMax();
-}
-// Blur/relayout clamp: applies BOTH bounds (a below-min or over-max value settles into
-// range). The live snap covers max-while-typing; this catches the min and any paste.
-function clampJobCount() {
-  const el = $('job_count'); if (!el) return;
-  const max = jobCountMax(), min = Number(el.dataset.min || 1);
-  const v = Number(digitsOnly(el.value));
-  if (!v) return; // blank is allowed — the server falls back to its default
-  const clamped = Math.min(max, Math.max(min, v));
-  el.value = groupThousands(String(clamped));
-  if (clamped !== v) setStatus(`Job count capped at ${groupThousands(String(max))} — the most one run fetches.`);
-}
+// There is no job-count knob any more: every run pulls each board's ~1,000 ceiling
+// and merges them (see the server's perBoardMax). The remaining numsep fields are the
+// salary bounds and startup max — they just comma-format live, with no cap logic.
 function wireThousands() {
   for (const el of document.querySelectorAll('.numsep')) {
-    // Every numsep field comma-formats live; job_count also live-snaps to its cap.
-    el.addEventListener('input', el.id === 'job_count' ? onJobCountInput : () => formatSepInput(el));
+    el.addEventListener('input', () => formatSepInput(el));
   }
-  $('job_count')?.addEventListener('blur', clampJobCount);
   formatAllSep();
-}
-
-// The honest job-count ceiling scales with how many locations are selected: a single
-// LinkedIn search tops out near perLocationCap (~1,000), so N places ⇒ N×perLocationCap.
-// The server enforces the same cap; this just keeps the input's max + hint truthful.
-const perLocationCap = 1000;
-const dynamicJobMax = () => perLocationCap * Math.max(1, selectedLocations.size);
-function updateJobCountMax() {
-  const el = $('job_count'); if (!el) return;
-  const max = dynamicJobMax();
-  el.dataset.max = String(max);
-  const hint = $('jobcount-hint'); if (hint) hint.textContent = `(max ${groupThousands(String(max))})`;
-  clampJobCount(); // a now-lower ceiling must pull an over-limit value back down
 }
 
 // Transient bottom-centre toast, auto-dismissed. Used for the post-run scan summary.
@@ -213,8 +171,6 @@ function collect() {
       recency_fresh_days: n('fresh'), recency_recent_days: n('recent'), recency_aging_days: n('aging'),
     },
     estimate_salary: c('estimate_salary'),
-    job_count: n('job_count'),
-    location_count: selectedLocations.size, // drives the server's per-location job-count cap
     field: selectedField,
     role: role,
   };
@@ -508,7 +464,7 @@ async function poll(id) {
     const j = await res.json();
     setBar('apify', j.apify.done, j.apify.total);
     setBar('verify', j.verify.done, j.verify.total);
-    $('run-target').textContent = j.apify.total ? `Target: ${groupThousands(String(j.apify.total))} jobs` : '';
+    $('run-target').textContent = j.apify.total ? `Target: up to ${groupThousands(String(j.apify.total))} jobs · LinkedIn + Indeed` : '';
     $('bar-rate').style.width = Math.min(100, j.rate.used / j.rate.limit * 100) + '%';
     $('num-rate').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
     $('run-title').textContent =
@@ -761,7 +717,6 @@ function renderLocations() {
     const k = b.dataset.key;
     selectedLocations.has(k) ? selectedLocations.delete(k) : selectedLocations.add(k);
     renderLocations();
-    updateJobCountMax(); // the ceiling tracks the number of selected places
   }));
 }
 // expandLocations turns the selected places into the raw match substrings the filter
@@ -947,8 +902,7 @@ document.querySelectorAll('#applicator-controls .fchip').forEach(c => c.addEvent
   renderApplicator();
 }));
 
-wireThousands(); // comma-format the numeric inputs and enforce the job-count cap on blur
-updateJobCountMax(); // set the initial max/hint from the default selected locations
+wireThousands(); // comma-format the salary/startup numeric inputs
 fetch(api('profile')).then(r => r.json()).then(p => {
   populate(p);
   preview();

@@ -33,7 +33,6 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/greenhouse"
 	"github.com/AndresI19/Job-Search-Go/internal/judge"
 	"github.com/AndresI19/Job-Search-Go/internal/lever"
-	"github.com/AndresI19/Job-Search-Go/internal/linkedin"
 	"github.com/AndresI19/Job-Search-Go/internal/model"
 	"github.com/AndresI19/Job-Search-Go/internal/output"
 	"github.com/AndresI19/Job-Search-Go/internal/pipeline"
@@ -41,16 +40,13 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/report"
 	"github.com/AndresI19/Job-Search-Go/internal/score"
 	"github.com/AndresI19/Job-Search-Go/internal/secret"
+	"github.com/AndresI19/Job-Search-Go/internal/source"
 	"github.com/AndresI19/Job-Search-Go/internal/summarize"
 	"github.com/AndresI19/Job-Search-Go/internal/watchlist"
 )
 
 //go:embed index.html
 var indexHTML []byte
-
-// defaultLinkedInActor is the public LinkedIn scraper Actor used when
-// APIFY_ACTOR_ID is unset (matches the CLI).
-const defaultLinkedInActor = "hKByXkMQaC5Qt9UMN"
 
 func main() {
 	// Flags stay for local use; each falls back to an env var so the container can
@@ -220,7 +216,6 @@ func (s *server) enableLive() error {
 	}
 	s.realReady = true
 	s.spends = os.Getenv("APIFY_BASE_URL") == "" && os.Getenv("JUDGE_BACKEND") != "mock"
-	s.actorID = envOr("APIFY_ACTOR_ID", defaultLinkedInActor)
 	s.apify = apify.New(token, opts...)
 	s.resolver = ats.NewResolver(ats.NewCached(greenhouse.New()), ats.NewCached(lever.New()))
 	s.judge = jd
@@ -243,7 +238,6 @@ type server struct {
 	// Real-run dependencies — nil unless the environment enabled them.
 	realReady  bool
 	spends     bool // true only when real runs use real (non-mock) backends
-	actorID    string
 	apify      *apify.Client
 	resolver   *ats.Resolver
 	judge      judge.Judge
@@ -353,35 +347,18 @@ func (j *jobState) snapshot() map[string]any {
 	return m
 }
 
-const (
-	suiteSize      = 10   // default jobs per run when the request names none
-	perLocationCap = 1000 // ~LinkedIn's reachable results per search, so the honest
-	//                        ceiling scales with the number of locations searched.
-	maxJobCount = 10000 // absolute safety ceiling regardless of location count
-)
+// perBoardMax is how many results each board is asked for per run. Both LinkedIn
+// and Indeed cap a public search near this anyway, so every run just pulls the
+// ceiling from every source — there is no user-facing job-count knob.
+const perBoardMax = 1000
 
 // runReq is a run's POST body: the profile, the requested job count, the selected
 // field (mapped to a curated all-roles keyword query), the role, and how many
 // locations were selected (drives the per-location job-count ceiling).
 type runReq struct {
 	profile.Profile
-	JobCount      int    `json:"job_count"`
-	LocationCount int    `json:"location_count"` // number of places selected; caps count at perLocationCap × this
-	Field         string `json:"field"`
-	Role          string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
-}
-
-// jobCountCap is the honest ceiling for a run: perLocationCap per selected location
-// (a single LinkedIn search tops out near perLocationCap), bounded by the absolute
-// maxJobCount. Zero locations still allows one search's worth.
-func jobCountCap(locations int) int {
-	if locations < 1 {
-		locations = 1
-	}
-	if cap := perLocationCap * locations; cap < maxJobCount {
-		return cap
-	}
-	return maxJobCount
+	Field string `json:"field"`
+	Role  string `json:"role"` // "admin" → real pipeline (if available); anything else → mock
 }
 
 // profRole is one role within a field: the LinkedIn keyword query it contributes
@@ -456,17 +433,13 @@ var locationCatalog = []struct {
 func (s *server) run(w http.ResponseWriter, r *http.Request) {
 	switch r.Method {
 	case http.MethodPost:
-		req := runReq{Profile: profile.Default(), JobCount: suiteSize}
+		req := runReq{Profile: profile.Default()}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			httpErr(w, err)
 			return
 		}
-		count := req.JobCount
-		if cap := jobCountCap(req.LocationCount); count < 1 {
-			count = suiteSize
-		} else if count > cap {
-			count = cap
-		}
+		// No job-count knob: every run pulls the per-board ceiling from every source.
+		count := perBoardMax
 		p := req.Profile
 		// Admin decision. In-cluster (platform auth configured) it is a verified,
 		// signed JWT claim; locally it falls back to the corner-switch role in the
@@ -492,7 +465,9 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
 			id: id, spends: real && s.spends, status: "running", phase: "apify",
-			apifyTotal: count, verifyTotal: count,
+			// Real runs fan out to every board, so the target is the ceiling × sources;
+			// the mock path overrides these with the actual cached-row count.
+			apifyTotal: count * len(source.All()), verifyTotal: count * len(source.All()),
 			rateUsed: 0.19, rateLimit: 5.00, // free-plan baseline
 			cfg: report.ConfigFrom(p),
 		}
@@ -581,6 +556,43 @@ func (s *server) runMock(j *jobState, rows [][]string) {
 // its dataset item-count for the Apify-load bar, normalize, verify (ATS + Claude)
 // with a per-listing callback for the post-process bar, apply the profile's
 // filters, and read the account's Apify usage for the rate bar.
+// scrapeSource runs one board's Apify actor to completion, streaming its item
+// count into `done` (capped at count) for the aggregate progress bar, then returns
+// its normalized listings. Concurrency-safe: called once per source goroutine.
+func (s *server) scrapeSource(ctx context.Context, src source.Source, q watchlist.Query, count int, done *int64, onProgress func()) ([]model.Listing, error) {
+	started, err := s.apify.StartRun(ctx, src.ActorID(), src.Input(q, count))
+	if err != nil {
+		return nil, fmt.Errorf("start: %w", err)
+	}
+	for {
+		if cnt, e := s.apify.DatasetInfo(ctx, started.DefaultDatasetID); e == nil {
+			if cnt > count {
+				cnt = count
+			}
+			atomic.StoreInt64(done, int64(cnt))
+			onProgress()
+		}
+		st, e := s.apify.RunStatus(ctx, started.ID)
+		if e != nil {
+			return nil, fmt.Errorf("poll: %w", e)
+		}
+		if st.Status == "SUCCEEDED" {
+			break
+		}
+		if st.Status == "FAILED" || st.Status == "ABORTED" || st.Status == "TIMED-OUT" {
+			return nil, fmt.Errorf("ended %s", st.Status)
+		}
+		time.Sleep(2 * time.Second)
+	}
+	raw, err := s.apify.DatasetItems(ctx, started.DefaultDatasetID)
+	if err != nil {
+		return nil, fmt.Errorf("fetch: %w", err)
+	}
+	atomic.StoreInt64(done, int64(count)) // this source's slot is complete
+	onProgress()
+	return src.Normalize(raw), nil
+}
+
 func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count int) {
 	ctx := context.Background()
 	fail := func(msg string) {
@@ -596,44 +608,58 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 	if len(p.Filters.Locations) > 0 {
 		q.Location = p.Filters.Locations[0]
 	}
-	input := map[string]any{"urls": []string{q.SearchURL()}, "count": count, "scrapeCompany": true}
 
-	started, err := s.apify.StartRun(ctx, s.actorID, input)
-	if err != nil {
-		fail("start scrape: " + err.Error())
+	// Fan out to every board concurrently, each at the per-board cap (`count`). The
+	// Apify-load bar totals across sources; each source updates its own slot.
+	srcs := source.All()
+	dones := make([]int64, len(srcs))
+	progress := func() {
+		var sum int64
+		for i := range dones {
+			sum += atomic.LoadInt64(&dones[i])
+		}
+		j.mu.Lock()
+		j.apifyDone = int(sum)
+		j.mu.Unlock()
+	}
+	type srcResult struct {
+		listings []model.Listing
+		err      error
+		name     string
+	}
+	res := make([]srcResult, len(srcs))
+	var wg sync.WaitGroup
+	for i, src := range srcs {
+		wg.Add(1)
+		go func(i int, src source.Source) {
+			defer wg.Done()
+			ls, err := s.scrapeSource(ctx, src, q, count, &dones[i], progress)
+			res[i] = srcResult{listings: ls, err: err, name: src.Name()}
+		}(i, src)
+	}
+	wg.Wait()
+
+	// Merge successful sources; fail only if EVERY source errored (one board being
+	// down shouldn't sink a run the other board answered).
+	var merged []model.Listing
+	var errs []string
+	for _, r := range res {
+		if r.err != nil {
+			errs = append(errs, r.name+": "+r.err.Error())
+			continue
+		}
+		merged = append(merged, r.listings...)
+	}
+	if len(merged) == 0 && len(errs) > 0 {
+		fail("scrape failed — " + strings.Join(errs, "; "))
 		return
 	}
-	// Poll the dataset item-count for the Apify-load bar while the run runs.
-	for {
-		if cnt, e := s.apify.DatasetInfo(ctx, started.DefaultDatasetID); e == nil {
-			if cnt > count {
-				cnt = count
-			}
-			j.mu.Lock()
-			j.apifyDone = cnt
-			j.mu.Unlock()
-		}
-		st, e := s.apify.RunStatus(ctx, started.ID)
-		if e != nil {
-			fail("poll run: " + e.Error())
-			return
-		}
-		if st.Status == "SUCCEEDED" {
-			break
-		}
-		if st.Status == "FAILED" || st.Status == "ABORTED" || st.Status == "TIMED-OUT" {
-			fail("scrape ended " + st.Status)
-			return
-		}
-		time.Sleep(2 * time.Second)
+	if len(errs) > 0 {
+		fmt.Fprintf(os.Stderr, "scrape: partial results — %s\n", strings.Join(errs, "; "))
 	}
 
-	raw, err := s.apify.DatasetItems(ctx, started.DefaultDatasetID)
-	if err != nil {
-		fail("fetch dataset: " + err.Error())
-		return
-	}
-	listings := linkedin.Normalize(raw)
+	// Collapse the same job cross-posted to both boards before verifying.
+	listings, _ := source.Dedup(merged)
 	j.mu.Lock()
 	j.apifyDone, j.phase, j.verifyTotal, j.verifyDone = j.apifyTotal, "verify", len(listings), 0
 	j.mu.Unlock()
