@@ -66,6 +66,23 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let sub: 'consecrated' | 'discerned' | 'manifested' | 'trashed' = 'discerned';
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
 
+  // Custom drag ghost. The native HTML5 ghost is a frozen snapshot we can't recolour
+  // mid-drag, and it floats OVER the Trash tab — so a red tab is hidden beneath it.
+  // Instead we suppress the native ghost and render our own cursor-following clone,
+  // which we flip red the moment it enters the Trash tab.
+  let dragGhost: HTMLElement | null = null;
+  // 1×1 transparent GIF used to blank out the native drag image.
+  const BLANK_DRAG_IMG = new Image();
+  BLANK_DRAG_IMG.src =
+    'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
+  // Position the clone under the cursor for the whole drag (dragover coords are reliable
+  // across browsers, unlike the `drag` event's often-zeroed coords). Bound once.
+  document.addEventListener('dragover', (e) => {
+    if (!dragGhost) return;
+    dragGhost.style.left = (e as DragEvent).clientX + 14 + 'px';
+    dragGhost.style.top = (e as DragEvent).clientY + 14 + 'px';
+  });
+
   function payFoot(j: ApplyJob): string {
     const ps = payState(j);
     if (j.contract && j.payNote) return `<span class="amt contract">${esc(j.payNote)}</span><span class="basis">contract rate — not annualized</span>`;
@@ -168,16 +185,34 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     );
     // Drag any card onto the Trash tab to dismiss it (works from every Conjure page).
     root.querySelectorAll<HTMLElement>('.ccard[draggable]').forEach((card) => {
-      card.addEventListener('dragstart', (e) => { (e as DragEvent).dataTransfer!.setData('text/plain', card.dataset.u!); card.classList.add('dragging'); });
-      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+      card.addEventListener('dragstart', (e) => {
+        const dt = (e as DragEvent).dataTransfer!;
+        dt.setData('text/plain', card.dataset.u!);
+        dt.effectAllowed = 'move';
+        dt.setDragImage(BLANK_DRAG_IMG, 0, 0); // hide the native ghost
+        card.classList.add('dragging');
+        // Our own clone follows the cursor and is the thing we can recolour.
+        dragGhost = card.cloneNode(true) as HTMLElement;
+        dragGhost.classList.add('dragghost');
+        dragGhost.classList.remove('dragging', 'sel');
+        dragGhost.style.width = card.offsetWidth + 'px';
+        document.body.appendChild(dragGhost);
+      });
+      card.addEventListener('dragend', () => {
+        card.classList.remove('dragging');
+        dragGhost?.remove();
+        dragGhost = null;
+      });
     });
     root.querySelectorAll<HTMLButtonElement>('.restore-btn').forEach((b) =>
       b.addEventListener('click', () => restoreItem(b.closest('.ccard') as HTMLElement))
     );
     const trashTab = root.querySelector<HTMLElement>('.csubs button[data-sub="trashed"]');
     if (trashTab) {
-      trashTab.addEventListener('dragover', (e) => { e.preventDefault(); trashTab.classList.add('drop'); });
-      trashTab.addEventListener('dragleave', () => trashTab.classList.remove('drop'));
+      // The tile (our clone) turns red over Trash — the tab keeps only a subtle cue,
+      // since it sits hidden beneath the tile the user is looking at.
+      trashTab.addEventListener('dragover', (e) => { e.preventDefault(); trashTab.classList.add('drop'); dragGhost?.classList.add('overtrash'); });
+      trashTab.addEventListener('dragleave', () => { trashTab.classList.remove('drop'); dragGhost?.classList.remove('overtrash'); });
       trashTab.addEventListener('drop', (e) => { e.preventDefault(); trashTab.classList.remove('drop'); const u = (e as DragEvent).dataTransfer!.getData('text/plain'); if (u) trashByUrl(u); });
     }
     if (sub === 'consecrated') {
