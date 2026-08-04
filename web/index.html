@@ -76,6 +76,7 @@
       <button class="tab-btn" data-tab="saved" title="Jobs you starred">★ Saved <span class="tab-count" id="saved-count">0</span></button>
       <button class="tab-btn" data-tab="applied" title="Jobs you ticked as applied">✓ Applied <span class="tab-count" id="applied-count">0</span></button>
       <button class="tab-btn" data-tab="applicator" title="A batch-summarized apply page for your saved, not-yet-applied jobs">⚡ Applicator</button>
+      <button class="tab-btn" data-tab="scry" title="The reimagined verified-jobs grid — sort and filter any column, New-first">✨ Scry</button>
       <!-- Aggregate-only controls: highlight just the latest scan, and prune dead listings. -->
       <span class="agg-controls" id="agg-controls" hidden>
         <label class="agg-new" title="Show only what the most recent scan added"><input type="checkbox" id="agg-new-only"> ✨ New only</label>
@@ -119,6 +120,7 @@
       </div>
     </div>
     <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>
+    <div class="scry-view" id="scry-root" hidden></div>
     <div class="pager" id="pager"></div>
   </main>
 </div>

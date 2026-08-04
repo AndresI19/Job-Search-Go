@@ -1,0 +1,131 @@
+/* Scry data-grid styling. Reads the platform design tokens (--accent, --panel,
+   --panel-2, --ink, --muted, --line) loaded by @platform/ui; defines only the pay /
+   recency data-encoding tints, which are fixed data colours, not brand accents. */
+:root {
+  --pay-light: #E2EFDA;
+  --pay-strong: #A9D08E;
+  --fresh: #B7E39B;
+  --recent: #FFEB9C;
+  --aging: #FFC97A;
+  --stale: #FFB3AD;
+}
+
+.scry-ctx {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  font-size: 12.5px;
+  color: var(--muted);
+  margin: 2px 2px 10px;
+}
+.scry-ctx b { color: var(--ink); }
+.scry-ctx.err { color: #d0433b; }
+.scry-ctx .newpill {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  color: var(--accent);
+  font-weight: 700;
+  border-radius: 999px;
+  padding: 2px 9px;
+}
+.scry-ctx .clearf {
+  border: 1px solid var(--line);
+  background: var(--panel);
+  color: var(--muted);
+  border-radius: 8px;
+  padding: 3px 10px;
+  font: 700 11.5px/1 inherit;
+  cursor: pointer;
+}
+.scry-ctx .clearf:hover { color: var(--accent); border-color: var(--accent); }
+
+.scry-wrap {
+  overflow-x: auto;
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  background: var(--panel);
+  box-shadow: var(--shadow, 0 1px 3px rgba(20, 22, 40, .09));
+  scrollbar-width: thin;
+}
+table.scry { border-collapse: collapse; width: auto; font-size: 12.5px; }
+table.scry th, table.scry td {
+  border-bottom: 1px solid var(--line);
+  padding: 6px 11px;
+  text-align: left;
+  white-space: nowrap;
+}
+table.scry thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 700 11px/1 inherit;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+.scry .th-in { display: inline-flex; align-items: center; gap: 5px; }
+.scry .th-in .thl { cursor: pointer; }
+.scry .sar { display: inline-flex; flex-direction: column; line-height: .7; font-size: 8px; cursor: pointer; color: color-mix(in srgb, var(--muted) 55%, transparent); }
+.scry .sar i { font-style: normal; }
+.scry .sar .up.act, .scry .sar .dn.act { color: var(--accent); }
+.scry .thf { border: 0; background: transparent; color: color-mix(in srgb, var(--muted) 60%, transparent); cursor: pointer; font-size: 11px; padding: 1px 3px; border-radius: 4px; }
+.scry .thf:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.scry .thf.act { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+
+table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
+.scry .num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
+.scry .muted { color: var(--muted); }
+.scry .tint { color: #191c28; } /* tinted cells keep dark ink in either theme */
+.scry td.title { font-weight: 650; max-width: 260px; overflow: hidden; text-overflow: ellipsis; }
+.scry td.title a { color: inherit; text-decoration: underline; text-underline-offset: 2px; }
+.scry td.title a:hover { color: var(--accent); }
+.scry td.remote { text-align: center; font-weight: 800; }
+.scry td.remote.yes { color: #2f9e44; }
+.scry td.remote.no { color: #d0433b; }
+.scry td.posted { cursor: help; }
+.scry td.estcell { color: var(--muted); font-style: italic; cursor: help; }
+.scry .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 11px; color: #191c28; }
+.scry .score { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
+.scry .cdot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
+.scry .cdot.good { background: #2f9e44; }
+.scry .cdot.warn { background: #d98600; }
+.scry .cdot.bad { background: #d0433b; }
+.scry .emptyrow td { padding: 26px; text-align: center; color: var(--muted); }
+
+/* New-first grouping: a divider before the pinned New group and before Earlier. */
+.scry tr.grouprow td {
+  background: var(--panel-2);
+  color: var(--muted);
+  font: 800 10px/1 inherit;
+  letter-spacing: .09em;
+  text-transform: uppercase;
+  padding: 7px 11px;
+  border-bottom: 1px solid var(--line);
+}
+.scry tr.grouprow.new td { color: var(--accent); background: color-mix(in srgb, var(--accent) 8%, var(--panel-2)); }
+.scry .gcnt { font-family: ui-monospace, monospace; background: color-mix(in srgb, var(--ink) 12%, transparent); border-radius: 999px; padding: 1px 7px; margin-left: 5px; }
+.scry tr.grouprow.new .gcnt { background: var(--accent); color: var(--accent-ink, #fff); }
+.scry tr.newrow td:first-child { box-shadow: inset 3px 0 0 var(--accent); }
+.scry .nwtag { color: var(--accent); }
+
+/* Per-column filter dropdown (appended to <body>). */
+.scry-colpop {
+  position: fixed;
+  z-index: 60;
+  width: 210px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  box-shadow: var(--shadow-lg, 0 14px 44px rgba(20, 22, 40, .17));
+  padding: 11px;
+}
+.scry-colpop .ct { font-size: 10px; letter-spacing: .07em; text-transform: uppercase; color: var(--muted); font-weight: 800; margin-bottom: 8px; }
+.scry-colpop label { display: flex; align-items: center; gap: 8px; font-size: 13px; padding: 3px 0; cursor: pointer; }
+.scry-colpop input[type=checkbox] { width: 15px; height: 15px; accent-color: var(--accent); }
+.scry-colpop .rng { display: flex; align-items: center; gap: 7px; }
+.scry-colpop .rng input { width: 100%; background: var(--panel-2); border: 1px solid var(--line); color: var(--ink); border-radius: 7px; padding: 5px 7px; font: 500 12.5px/1 ui-monospace, monospace; text-align: right; }
+.scry-colpop .rng span { color: var(--muted); font-size: 12px; }
+.scry-colpop .row2 { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 9px; }
+.scry-colpop .row2 button { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 7px; padding: 5px 11px; font-weight: 700; font-size: 12px; cursor: pointer; }
+.scry-colpop .row2 .app { background: var(--accent); color: var(--accent-ink, #fff); border-color: transparent; }

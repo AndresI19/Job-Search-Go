@@ -5,6 +5,7 @@ import '@platform/ui/tokens.css';
 import '@platform/ui/base.css';
 import '@platform/ui/gate.css';
 import './app.css';
+import { mountScry } from './scry'; // the typed Scry data-grid (reimagined Discover view)
 import { mountAccountFab } from '@platform/ui/gate';
 import { authFetch, current, isAdmin, onIdentity } from '@platform/ui/auth';
 
@@ -285,6 +286,10 @@ function renderTabs() {
 }
 function render() {
   renderTabs();
+  // Leaving the Scry view: hide its container and restore the legacy table.
+  // render() only runs for legacy tabs (never during a run), so unhiding is safe here.
+  const sr = $('scry-root'); if (sr) sr.hidden = true;
+  const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = '';
   const data = currentData();
   if (!data || !data.columns || !data.columns.length || !data.rows) {
     $('table').outerHTML = '<div class="empty" id="table">' + emptyMsg() + '</div>';
@@ -558,8 +563,21 @@ document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('cli
   sortState = { col: -1, dir: 1 }; page = 0;
   if (activeTab === 'aggregate') loadAggregate();
   else if (activeTab === 'applicator') loadApplicator();
+  else if (activeTab === 'scry') showScry();
   else render();
 }));
+
+// Scry view: the typed data-grid, mounted once into its own container. It reads
+// api/results directly, so it is independent of the legacy table's data plumbing —
+// switching to it hides the table; any other tab (via render) restores it.
+let scryMounted = false;
+function showScry() {
+  renderTabs();
+  const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = 'none';
+  $('pager').innerHTML = '';
+  const root = $('scry-root'); root.hidden = false;
+  if (!scryMounted) { mountScry(root); scryMounted = true; }
+}
 
 // Aggregate tab: fetch the persisted listings (all, or just the latest scan when
 // "New only" is ticked) and render them through the same table.
