@@ -249,7 +249,11 @@ func (d *DB) MarkUnavailable(ctx context.Context, urls []string) (int64, error) 
 	if !d.Enabled() || len(urls) == 0 {
 		return 0, nil
 	}
-	tag, err := d.pool.Exec(ctx, `UPDATE listings SET available = false WHERE url = ANY($1)`, urls)
+	// Never retire a manifested (applied) job — its listing must stay so the Manifested
+	// stage keeps it. Everything else is fair game.
+	tag, err := d.pool.Exec(ctx, `
+		UPDATE listings SET available = false
+		WHERE url = ANY($1) AND url NOT IN (SELECT url FROM saved WHERE applied)`, urls)
 	return tag.RowsAffected(), err
 }
 
@@ -339,7 +343,7 @@ func (d *DB) SavedNotApplied(ctx context.Context, userID string) ([]SavedListing
 		SELECT l.result, s.pinned, s.applied, l.available
 		FROM saved s
 		JOIN listings l ON l.url = s.url
-		WHERE s.user_id = $1 AND s.pinned AND NOT s.applied
+		WHERE s.user_id = $1 AND s.pinned AND NOT s.applied AND l.available
 		ORDER BY l.last_seen DESC`, userID)
 	if err != nil {
 		return nil, err
