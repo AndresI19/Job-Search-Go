@@ -52,6 +52,8 @@
 .manichk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
 .manichk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .gone { font-size: 11px; color: #d0433b; font-weight: 700; }
+.ccard.applied { opacity: .78; }
+.doneflag { font-size: 11px; color: #2f9e44; font-weight: 800; display: inline-flex; gap: 5px; align-items: center; }
 
 .conjure-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); opacity: 0; pointer-events: none; transition: .25s; z-index: 60; }
 .conjure-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

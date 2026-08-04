@@ -60,8 +60,9 @@ function toast(msg: string): void {
 }
 
 export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
-  let jobs: ApplyJob[] = [];
-  let sub: 'consecrated' | 'discerned' = 'discerned';
+  let jobs: ApplyJob[] = []; // saved, not applied (Consecrated + Discerned)
+  let manifested: ApplyJob[] = []; // saved AND applied
+  let sub: 'consecrated' | 'discerned' | 'manifested' = 'discerned';
 
   function payFoot(j: ApplyJob): string {
     const ps = payState(j);
@@ -99,13 +100,25 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     </article>`;
   }
 
+  // A Manifested card: the summary if we have one, plus Open posting; no manifest
+  // toggle (it's already applied).
+  function manifestedCard(j: ApplyJob): string {
+    return `<article class="ccard applied" data-u="${esc(j.u)}">
+      <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
+      ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || 'Not specified')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || 'None stated')}</span></div></div>` : ''}
+      <div class="cfoot"><div class="pay">${payFoot(j)}</div>
+        <div class="cact"><span class="doneflag">✓ Manifested</span><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a></div></div>
+    </article>`;
+  }
+
   function render(): void {
     const consecrated = jobs.filter((j) => !isDiscerned(j));
     const discerned = jobs.filter(isDiscerned);
-    const shown = sub === 'discerned' ? discerned : consecrated;
+    const shown = sub === 'discerned' ? discerned : sub === 'consecrated' ? consecrated : manifested;
+    const cardFn = sub === 'consecrated' ? consecratedCard : sub === 'manifested' ? manifestedCard : discernedCard;
     const cards = shown.length
-      ? shown.map(sub === 'discerned' ? discernedCard : consecratedCard).join('')
-      : `<p class="cempty">${sub === 'discerned' ? 'Nothing discerned yet — Consecrate jobs in Scry, then Discern them here.' : 'No un-discerned saved jobs. ✨ Discern reads each into an apply card.'}</p>`;
+      ? shown.map(cardFn).join('')
+      : `<p class="cempty">${sub === 'discerned' ? 'Nothing discerned yet — Consecrate jobs in Scry, then Discern them here.' : sub === 'consecrated' ? 'No un-discerned saved jobs. ✨ Discern reads each into an apply card.' : 'Nothing manifested yet — Open a posting to apply, then mark it manifested.'}</p>`;
 
     root.innerHTML = `
       <p class="croomnote">Your shortlist, read for applying. <b>Discern</b> has Claude read each saved posting into an apply card — required vs preferred, role &amp; company, contract-native pay. <b>Open posting</b> to apply on their site, then <b>mark it manifested</b> yourself.</p>
@@ -113,6 +126,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         <div class="csubs">
           <button data-sub="consecrated" class="${sub === 'consecrated' ? 'on' : ''}">★ Consecrated <span class="c">${consecrated.length}</span></button>
           <button data-sub="discerned" class="${sub === 'discerned' ? 'on' : ''}">Discerned <span class="c">${discerned.length}</span></button>
+          <button data-sub="manifested" class="${sub === 'manifested' ? 'on' : ''}">✓ Manifested <span class="c">${manifested.length}</span></button>
         </div>
         <button class="discernbtn" id="conjure-discern"${consecrated.length ? '' : ' disabled'}>✨ Discern${consecrated.length ? ` (${consecrated.length})` : ''}</button>
       </div>
@@ -146,9 +160,11 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
           toast('Sign in to track manifested jobs');
           return;
         }
-        jobs = jobs.filter((j) => j.u !== u);
+        const j = jobs.find((x) => x.u === u);
+        jobs = jobs.filter((x) => x.u !== u);
+        if (j) manifested.unshift(j);
         render();
-        toast('✨ Manifested — moved out of your shortlist');
+        toast('✨ Manifested — moved to Manifested');
       })
       .catch(() => toast('Could not mark manifested'));
   }
@@ -193,13 +209,13 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
 
   function load(): void {
     root.innerHTML = '<p class="croomnote">Loading your shortlist…</p>';
-    fetch(deps.api('applicator'))
-      .then((r) => {
-        if (!r.ok) throw new Error('applicator ' + r.status);
-        return r.json() as Promise<{ jobs: ApplyJob[] }>;
-      })
-      .then((data) => {
-        jobs = data.jobs || [];
+    Promise.all([
+      fetch(deps.api('applicator')).then((r) => (r.ok ? (r.json() as Promise<{ jobs: ApplyJob[] }>) : Promise.reject(new Error('applicator ' + r.status)))),
+      fetch(deps.api('applicator') + '?view=applied').then((r) => (r.ok ? (r.json() as Promise<{ jobs: ApplyJob[] }>) : Promise.resolve({ jobs: [] }))).catch(() => ({ jobs: [] as ApplyJob[] })),
+    ])
+      .then(([active, applied]) => {
+        jobs = active.jobs || [];
+        manifested = applied.jobs || [];
         render();
       })
       .catch((e: Error) => {

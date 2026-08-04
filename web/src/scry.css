@@ -8,6 +8,8 @@
   --recent: #FFEB9C;
   --aging: #FFC97A;
   --stale: #FFB3AD;
+  --est-light: #DAE8FC; /* estimated pay — distinct shades of blue, never the posted green */
+  --est-strong: #A9C7EA;
 }
 
 .scry-ctx {
@@ -84,7 +86,18 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry td.remote.yes { color: #2f9e44; }
 .scry td.remote.no { color: #d0433b; }
 .scry td.posted { cursor: help; }
-.scry td.estcell { color: var(--muted); font-style: italic; cursor: help; }
+.scry td.estcell { cursor: help; }
+/* Consecrate (★) column */
+.scry th.starh, .scry td.starcell { width: 1%; text-align: center; padding: 4px 6px; }
+.scry .starbtn { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
+.scry .starbtn:hover { color: #e0980a; }
+.scry .starbtn.on { color: #f0a500; }
+/* Salary-presence toggle in the context bar */
+.paytoggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
+.paytoggle .ptl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 800; margin-right: 2px; }
+.paychip { border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 3px 9px; font: 700 11px/1 inherit; cursor: pointer; }
+.paychip:hover { color: var(--accent); border-color: var(--accent); }
+.paychip.on { background: var(--accent); color: var(--accent-ink, #fff); border-color: transparent; }
 .scry .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 11px; color: #191c28; }
 .scry .score { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .scry .cdot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
