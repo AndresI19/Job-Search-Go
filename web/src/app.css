@@ -58,6 +58,10 @@
   .tab-div { display: inline-flex; align-items: center; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 4px 0 10px; opacity: .7; }
   .tab-btn.classic { font-size: 11px; padding: 6px 11px; opacity: .72; }
   .tab-btn.classic:hover, .tab-btn.classic.active { opacity: 1; }
+  /* Run bar homed in the Scry shell */
+  .scry-runbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
+  .scry-runbar .primary { font-size: 13px; padding: 8px 16px; }
+  .runbar-hint { font-size: 11.5px; color: var(--muted); }
   /* Aggregate-only controls: the New-only filter and the Refresh (prune) button. */
   /* Sit just left of centre, right after the tabs — NOT pushed to the right, where
      they collided with the account FAB. */

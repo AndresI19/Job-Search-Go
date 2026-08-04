@@ -505,6 +505,10 @@ async function poll(id) {
         : `Run complete — <span class="count">0</span> matched your filters (try loosening them).`;
       $('status').className = 'status';
       resetRun();
+      // A real (admin) scan persists to the aggregate, so land the user in a freshly
+      // reloaded Scry grid (New-first surfaces what this scan just added). A guest's
+      // mock scan doesn't persist, so it stays in the classic Results table.
+      if (role === 'admin') { activeTab = 'scry'; scryMounted = false; showScry(); }
       return;
     }
     if (j.status === 'error') { setStatus(j.error || 'run failed', true); showRunview(false); resetRun(); return; }
@@ -513,6 +517,21 @@ async function poll(id) {
 }
 
 $('run').addEventListener('click', run);
+// Run bar in the Scry shell — the same scan, triggered from the reimagined view.
+$('run-scry')?.addEventListener('click', run);
+// Refresh from the Scry shell: prune delisted jobs, then reload the grid to reflect it.
+$('refresh-scry')?.addEventListener('click', async () => {
+  const b = $('refresh-scry'); const label = b.textContent; b.disabled = true; b.textContent = 'Checking…';
+  try {
+    const res = await authFetch(api('refresh'), { method: 'POST' });
+    if (!res) throw new Error('Sign in as an admin to refresh.');
+    if (!res.ok) throw new Error(await res.text());
+    const { checked, removed } = await res.json();
+    setStatus(`Refreshed — checked ${checked}, removed ${removed} no longer available.`);
+    scryMounted = false; if (activeTab === 'scry') showScry(); // reflect the prune in Scry
+  } catch (e) { setStatus(e.message, true); }
+  finally { b.disabled = false; b.textContent = label; }
+});
 
 // Export the current results as CSV; import a previously-exported one back.
 // Export the current results client-side so the applied/pinned flags travel with the
