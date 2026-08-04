@@ -115,6 +115,7 @@ func main() {
 	mux.HandleFunc(base+"api/export", s.export)
 	mux.HandleFunc(base+"api/import", s.importResults)
 	mux.HandleFunc(base+"api/listings", s.listings)
+	mux.HandleFunc(base+"api/results", s.results) // typed domain-model contract (Jobomancer Scry grid)
 	mux.HandleFunc(base+"api/refresh", s.refresh)
 	mux.HandleFunc(base+"api/saved", s.saved)
 	mux.HandleFunc(base+"api/applicator/launch", s.applicatorLaunch)
