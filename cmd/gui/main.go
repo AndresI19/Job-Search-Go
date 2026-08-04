@@ -120,6 +120,7 @@ func main() {
 	mux.HandleFunc(base+"api/saved", s.saved)
 	mux.HandleFunc(base+"api/applicator/launch", s.applicatorLaunch)
 	mux.HandleFunc(base+"api/applicator/status", s.applicatorStatus)
+	mux.HandleFunc(base+"api/applicator/trash", s.trash)
 	mux.HandleFunc(base+"api/applicator", s.applicator)
 	mux.HandleFunc(base+"api/health", s.health)
 	mux.HandleFunc(base+"version", s.version)
@@ -1034,6 +1035,34 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, map[string]string{"id": id})
 }
 
+// trash marks the given saved listings unavailable (dismissed): they leave Scry and the
+// shortlist and appear in the Trash view. Requires an identity; MarkUnavailable never
+// touches a manifested (applied) job.
+func (s *server) trash(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.userID(r) == "" {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+		http.Error(w, "sign in to trash listings", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		URLs []string `json:"urls"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpErr(w, err)
+		return
+	}
+	n, err := s.db.MarkUnavailable(r.Context(), body.URLs)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]int{"trashed": int(n)})
+}
+
 // applicatorStatus reports a launch's progress for the loading screen.
 func (s *server) applicatorStatus(w http.ResponseWriter, r *http.Request) {
 	s.appMu.Lock()
@@ -1079,9 +1108,10 @@ func (s *server) applicator(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	// view=applied → the Manifested set (saved AND applied), for the Conjure Manifested
-	// stage. Same row shape, so the client renders it through the same card.
-	if strings.EqualFold(r.URL.Query().Get("view"), "applied") {
+	// view=applied → the Manifested set (saved AND applied); view=trashed → the Trash
+	// (saved, not applied, no longer available: manually trashed or swept by Refresh).
+	// Same row shape, so the client renders each through the same card.
+	if view := strings.ToLower(r.URL.Query().Get("view")); view == "applied" || view == "trashed" {
 		all, aerr := s.db.SavedListings(r.Context(), userID)
 		if aerr != nil {
 			httpErr(w, aerr)
@@ -1089,7 +1119,11 @@ func (s *server) applicator(w http.ResponseWriter, r *http.Request) {
 		}
 		saved = saved[:0]
 		for _, sl := range all {
-			if sl.Applied {
+			keep := sl.Applied
+			if view == "trashed" {
+				keep = sl.Pinned && !sl.Applied && !sl.Available
+			}
+			if keep {
 				saved = append(saved, sl)
 			}
 		}

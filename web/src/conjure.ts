@@ -62,7 +62,8 @@ function toast(msg: string): void {
 export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let jobs: ApplyJob[] = []; // saved, not applied (Consecrated + Discerned)
   let manifested: ApplyJob[] = []; // saved AND applied
-  let sub: 'consecrated' | 'discerned' | 'manifested' = 'discerned';
+  let trashed: ApplyJob[] = []; // saved, dismissed / no longer available
+  let sub: 'consecrated' | 'discerned' | 'manifested' | 'trashed' = 'discerned';
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
 
   function payFoot(j: ApplyJob): string {
@@ -89,8 +90,17 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       </div>
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
         <div class="cact"><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a>
-          <label class="manichk"><input type="checkbox" class="manibox"> Mark manifested</label></div></div>
+          <label class="manichk"><input type="checkbox" class="manibox"> Mark manifested</label>
+          <button class="linkbtn trashbtn" type="button">🗑 Trash</button></div></div>
       ${j.a ? '' : '<div class="gone">⚠ No longer listed</div>'}
+    </article>`;
+  }
+
+  // A Trash card: read-only — a job you dismissed, or one the Refresh sweep retired.
+  function trashedCard(j: ApplyJob): string {
+    return `<article class="ccard trashed" data-u="${esc(j.u)}">
+      <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
+      <div class="uinfo"><span class="muted">Trashed — dismissed or no longer listed</span></div>
     </article>`;
   }
   function consecratedCard(j: ApplyJob): string {
@@ -116,11 +126,15 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   function render(): void {
     const consecrated = jobs.filter((j) => !isDiscerned(j));
     const discerned = jobs.filter(isDiscerned);
-    const shown = sub === 'discerned' ? discerned : sub === 'consecrated' ? consecrated : manifested;
-    const cardFn = sub === 'consecrated' ? consecratedCard : sub === 'manifested' ? manifestedCard : discernedCard;
-    const cards = shown.length
-      ? shown.map(cardFn).join('')
-      : `<p class="cempty">${sub === 'discerned' ? 'Nothing discerned yet — Consecrate jobs in Scry, then Discern them here.' : sub === 'consecrated' ? 'No un-discerned saved jobs. ✨ Discern reads each into an apply card.' : 'Nothing manifested yet — Open a posting to apply, then mark it manifested.'}</p>`;
+    const shown = sub === 'discerned' ? discerned : sub === 'consecrated' ? consecrated : sub === 'trashed' ? trashed : manifested;
+    const cardFn = sub === 'consecrated' ? consecratedCard : sub === 'manifested' ? manifestedCard : sub === 'trashed' ? trashedCard : discernedCard;
+    const empties: Record<string, string> = {
+      discerned: 'Nothing discerned yet — Consecrate jobs in Scry, then Discern them here.',
+      consecrated: 'No un-discerned saved jobs. ✨ Discern reads each into an apply card.',
+      manifested: 'Nothing manifested yet — Open a posting to apply, then mark it manifested.',
+      trashed: 'Trash is empty. Dismiss a job with 🗑 Trash, or Refresh to sweep expired ones here (manifested jobs are never swept).',
+    };
+    const cards = shown.length ? shown.map(cardFn).join('') : `<p class="cempty">${empties[sub]}</p>`;
 
     // Discern lives only on the Consecrated stage (it reads un-discerned jobs): select
     // tiles, or Select all, then Discern the selection.
@@ -137,6 +151,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
           <button data-sub="consecrated" class="${sub === 'consecrated' ? 'on' : ''}">★ Consecrated <span class="c">${consecrated.length}</span></button>
           <button data-sub="discerned" class="${sub === 'discerned' ? 'on' : ''}">Discerned <span class="c">${discerned.length}</span></button>
           <button data-sub="manifested" class="${sub === 'manifested' ? 'on' : ''}">✓ Manifested <span class="c">${manifested.length}</span></button>
+          <button data-sub="trashed" class="${sub === 'trashed' ? 'on' : ''}">🗑 Trash <span class="c">${trashed.length}</span></button>
         </div>
         <div class="cactions">${actions}</div>
       </div>
@@ -150,6 +165,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     );
     root.querySelectorAll<HTMLButtonElement>('.unmani').forEach((b) =>
       b.addEventListener('click', () => markUnmanifested(b.closest('.ccard') as HTMLElement))
+    );
+    root.querySelectorAll<HTMLButtonElement>('.trashbtn').forEach((b) =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); trashItem(b.closest('.ccard') as HTMLElement); })
     );
     if (sub === 'consecrated') {
       root.querySelectorAll<HTMLElement>('.ccard.unprepped').forEach((card) =>
@@ -184,6 +202,27 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         toast('✨ Manifested — moved to Manifested');
       })
       .catch(() => toast('Could not mark manifested'));
+  }
+
+  // Trash = dismiss a job: mark its listing unavailable. It leaves Scry and the shortlist
+  // and lands in the Trash view. The server never trashes a manifested job.
+  function trashItem(card: HTMLElement): void {
+    const u = card.dataset.u!;
+    deps
+      .authFetch(deps.api('applicator/trash'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls: [u] }),
+      })
+      .then((res) => {
+        if (!res) { toast('Sign in to trash jobs'); return; }
+        const j = jobs.find((x) => x.u === u);
+        jobs = jobs.filter((x) => x.u !== u);
+        if (j) trashed.unshift(j);
+        render();
+        toast('🗑 Trashed');
+      })
+      .catch(() => toast('Could not trash'));
   }
 
   // Un-manifest = undo an accidental manifest: clear the applied flag; the job returns
@@ -263,10 +302,12 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     Promise.all([
       getJobs('applicator'),
       getJobs('applicator?view=applied').catch(() => ({ jobs: [] as ApplyJob[] })),
+      getJobs('applicator?view=trashed').catch(() => ({ jobs: [] as ApplyJob[] })),
     ])
-      .then(([active, applied]) => {
+      .then(([active, applied, trash]) => {
         jobs = active.jobs || [];
         manifested = applied.jobs || [];
+        trashed = trash.jobs || [];
         render();
       })
       .catch((e: Error) => {

@@ -53,6 +53,7 @@
 .manichk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .gone { font-size: 11px; color: #d0433b; font-weight: 700; }
 .ccard.applied { opacity: .78; }
+.ccard.trashed { opacity: .68; border-style: dashed; }
 /* Consecrated multiselect */
 .ccard.unprepped { cursor: pointer; }
 .ccard.unprepped:hover { border-color: var(--accent); }

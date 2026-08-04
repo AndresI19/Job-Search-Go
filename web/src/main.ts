@@ -163,8 +163,8 @@ $('refresh').addEventListener('click', async () => {
     const res = await authFetch(api('refresh'), { method: 'POST' });
     if (!res) throw new Error('Sign in as an admin to refresh.');
     if (!res.ok) throw new Error(await res.text());
-    const { checked, removed } = await res.json();
-    toast(`Refreshed — checked <b>${checked}</b>, removed <b>${removed}</b> no longer available`);
+    const { removed } = await res.json();
+    toast(`🗑 Cleaned up <b>${removed}</b> old job${removed === 1 ? '' : 's'}`);
     reloadScry();
   } catch (e) { setStatus(e.message, true); }
   finally { b.disabled = false; b.textContent = label; }
