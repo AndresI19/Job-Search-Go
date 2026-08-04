@@ -79,7 +79,9 @@ interface State {
   pinned: Set<string>; // consecrated URLs
   sortIdx: number;
   sortDir: 1 | -1;
-  pay: 'all' | 'has' | 'none'; // salary presence toggle
+  page: number;
+  pay: 'all' | 'has' | 'none'; // salary presence (lives in the Filters menu)
+  newOnly: boolean; // show only latest-scan jobs (Filters menu)
   roles: Set<string>;
   locs: Set<string>;
   remote: Set<string>;
@@ -89,9 +91,11 @@ interface State {
   daysMax: number | null;
 }
 
+const PAGE_SIZE = 100;
+
 export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const st: State = {
-    rows: [], pinned: new Set(), sortIdx: -1, sortDir: -1, pay: 'all',
+    rows: [], pinned: new Set(), sortIdx: -1, sortDir: -1, page: 0, pay: 'all', newOnly: false,
     roles: new Set(), locs: new Set(), remote: new Set(), payLo: null, payHi: null, scoreMin: null, daysMax: null,
   };
 
@@ -109,12 +113,16 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const SPAN = COLS.length + 1; // + the ★ column
 
   const anyFilter = () =>
-    st.pay !== 'all' || st.roles.size || st.locs.size || st.remote.size || st.payLo != null || st.payHi != null || st.scoreMin != null || st.daysMax != null;
+    st.pay !== 'all' || st.newOnly || st.roles.size || st.locs.size || st.remote.size || st.payLo != null || st.payHi != null || st.scoreMin != null || st.daysMax != null;
+  // count of active filter GROUPS, for the Filters button badge
+  const filterCount = () =>
+    (st.pay !== 'all' ? 1 : 0) + (st.newOnly ? 1 : 0) + (st.roles.size ? 1 : 0) + (st.locs.size ? 1 : 0) + (st.remote.size ? 1 : 0) + (st.payLo != null || st.payHi != null ? 1 : 0) + (st.scoreMin != null ? 1 : 0) + (st.daysMax != null ? 1 : 0);
   const filterActive = (k: FilterKind) =>
     ({ role: st.roles.size > 0, location: st.locs.size > 0, remote: st.remote.size > 0, pay: st.payLo != null || st.payHi != null, score: st.scoreMin != null, days: st.daysMax != null }[k]);
 
   function view(): Result[] {
     let rows = st.rows.slice();
+    if (st.newOnly) rows = rows.filter((r) => r.new);
     if (st.pay === 'has') rows = rows.filter((r) => r.payState !== 'none');
     else if (st.pay === 'none') rows = rows.filter((r) => r.payState === 'none');
     if (st.roles.size) rows = rows.filter((r) => st.roles.has(classifyRole(r.title)));
@@ -181,47 +189,87 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     return `<th class="th starh" title="Consecrate">★</th>` + dataCols;
   }
 
+  // reset to the first page and re-render — for any change that alters the row SET.
+  const refilter = () => { st.page = 0; render(); };
+
   function render(): void {
     const rows = view();
     const fresh = rows.filter((r) => r.new);
     const older = rows.filter((r) => !r.new);
+    const combined = fresh.concat(older); // New-first, then Earlier
+    const total = combined.length;
+    const pages = Math.max(1, Math.ceil(total / PAGE_SIZE));
+    st.page = Math.min(Math.max(0, st.page), pages - 1);
+    const start = st.page * PAGE_SIZE;
+    const pageRows = combined.slice(start, start + PAGE_SIZE);
+    const pf = pageRows.filter((r) => r.new);
+    const po = pageRows.filter((r) => !r.new);
+
     const grp = (label: string, n: number, cls: string) => `<tr class="grouprow ${cls}"><td colspan="${SPAN}">${label} <span class="gcnt">${n}</span></td></tr>`;
     let body: string;
-    if (!rows.length) body = `<tr class="emptyrow"><td colspan="${SPAN}">${anyFilter() ? 'No jobs match these filters.' : 'No verified jobs yet — run a scan to fill this.'}</td></tr>`;
+    if (!total) body = `<tr class="emptyrow"><td colspan="${SPAN}">${anyFilter() ? 'No jobs match these filters.' : 'No verified jobs yet — run a scan to fill this.'}</td></tr>`;
     else {
       body = '';
-      if (fresh.length) body += grp('✨ New since last scan', fresh.length, 'new') + fresh.map(rowHTML).join('');
-      if (older.length) body += (fresh.length ? grp('Earlier', older.length, 'old') : '') + older.map(rowHTML).join('');
+      if (pf.length) body += grp('✨ New since last scan', fresh.length, 'new') + pf.map(rowHTML).join('');
+      if (po.length) body += (pf.length ? grp('Earlier', older.length, 'old') : '') + po.map(rowHTML).join('');
     }
-    const payToggle = (['all', 'has', 'none'] as const).map((k) => `<button class="paychip${st.pay === k ? ' on' : ''}" data-pay="${k}">${k === 'all' ? 'All' : k === 'has' ? 'Salary' : 'No salary'}</button>`).join('');
+    const fc = filterCount();
+    const pager = pages > 1
+      ? `<div class="scry-pager"><button ${st.page === 0 ? 'disabled' : ''} data-pg="-1">‹ Prev</button><span>${start + 1}–${start + pageRows.length} of ${total} · page ${st.page + 1} of ${pages}</span><button ${st.page >= pages - 1 ? 'disabled' : ''} data-pg="1">Next ›</button></div>`
+      : `<div class="scry-pager"><span>${total} listing${total === 1 ? '' : 's'}</span></div>`;
+
     root.innerHTML = `
-      <div class="scry-ctx"><b>${rows.length}</b> verified job${rows.length === 1 ? '' : 's'}${fresh.length ? ` · <span class="newpill">✨ ${fresh.length} new</span>` : ''}
-        <span class="paytoggle"><span class="ptl">Pay</span>${payToggle}</span>
-        ${anyFilter() ? '<button class="clearf" id="scry-clear">Clear filters</button>' : ''}</div>
-      <div class="scry-wrap"><table class="scry"><thead><tr>${headHTML()}</tr></thead><tbody>${body}</tbody></table></div>`;
+      <div class="scry-ctx"><b>${total}</b> verified job${total === 1 ? '' : 's'}${fresh.length ? ` · <span class="newpill">✨ ${fresh.length} new</span>` : ''}
+        <button class="filt-open" id="scry-filters">⏷ Filters${fc ? ` <span class="filt-badge">${fc}</span>` : ''}</button>
+        ${anyFilter() ? '<button class="clearf" id="scry-clear">Clear all</button>' : ''}</div>
+      <div class="scry-wrap"><table class="scry"><thead><tr>${headHTML()}</tr></thead><tbody>${body}</tbody></table></div>
+      ${pager}`;
 
     root.querySelectorAll<HTMLElement>('[data-sort]').forEach((el) =>
       el.addEventListener('click', () => {
         const i = Number(el.dataset.sort);
         if (st.sortIdx === i) st.sortDir = (st.sortDir * -1) as 1 | -1;
         else { st.sortIdx = i; st.sortDir = 1; }
-        render();
+        refilter();
       })
     );
     root.querySelectorAll<HTMLElement>('.thf').forEach((el) =>
       el.addEventListener('click', (e) => { e.stopPropagation(); openFilter(el.dataset.filter as FilterKind, el); })
     );
-    root.querySelectorAll<HTMLElement>('.paychip').forEach((el) =>
-      el.addEventListener('click', () => { st.pay = el.dataset.pay as State['pay']; render(); })
-    );
     root.querySelectorAll<HTMLButtonElement>('.starbtn').forEach((b) =>
       b.addEventListener('click', () => consecrate(b))
     );
+    root.querySelectorAll<HTMLElement>('[data-pg]').forEach((b) =>
+      b.addEventListener('click', () => { st.page += Number(b.dataset.pg); render(); root.querySelector('.scry-wrap')?.scrollTo(0, 0); })
+    );
+    const fo = root.querySelector('#scry-filters');
+    if (fo) fo.addEventListener('click', (e) => { e.stopPropagation(); openFiltersMenu(fo as HTMLElement); });
     const clear = root.querySelector('#scry-clear');
     if (clear) clear.addEventListener('click', () => {
-      st.pay = 'all'; st.roles.clear(); st.locs.clear(); st.remote.clear();
-      st.payLo = st.payHi = st.scoreMin = st.daysMax = null; render();
+      st.pay = 'all'; st.newOnly = false; st.roles.clear(); st.locs.clear(); st.remote.clear();
+      st.payLo = st.payHi = st.scoreMin = st.daysMax = null; refilter();
     });
+  }
+
+  // The broader Filters menu — salary presence and New-only, consolidated in one place.
+  function openFiltersMenu(anchor: HTMLElement): void {
+    closePop();
+    const cp = document.createElement('div');
+    cp.className = 'scry-colpop filt-menu';
+    const sal = (['all', 'has', 'none'] as const).map((k) => `<label><input type="radio" name="fm-sal" data-sal="${k}" ${st.pay === k ? 'checked' : ''}>${k === 'all' ? 'All jobs' : k === 'has' ? 'Has a salary' : 'No salary listed'}</label>`).join('');
+    cp.innerHTML = `<div class="ct">Salary</div>${sal}<div class="ct" style="margin-top:9px">Recency</div><label><input type="checkbox" id="fm-new" ${st.newOnly ? 'checked' : ''}> ✨ New since last scan only</label><div class="row2"><button data-act="clear">Clear</button><button class="app" data-act="apply">Apply</button></div>`;
+    document.body.appendChild(cp);
+    pop = cp;
+    const rect = anchor.getBoundingClientRect();
+    cp.style.top = rect.bottom + 6 + 'px';
+    cp.style.left = Math.max(8, Math.min(rect.left, window.innerWidth - cp.offsetWidth - 10)) + 'px';
+    cp.querySelector('[data-act=apply]')!.addEventListener('click', () => {
+      const picked = cp.querySelector<HTMLInputElement>('input[name=fm-sal]:checked');
+      st.pay = (picked?.dataset.sal as State['pay']) || 'all';
+      st.newOnly = cp.querySelector<HTMLInputElement>('#fm-new')!.checked;
+      closePop(); refilter();
+    });
+    cp.querySelector('[data-act=clear]')!.addEventListener('click', () => { st.pay = 'all'; st.newOnly = false; closePop(); refilter(); });
   }
 
   // Consecrate = save into the shortlist (Conjure's Consecrated stage), via the saved
@@ -282,7 +330,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
       else if (kind === 'pay') { st.payLo = num('f-lo'); st.payHi = num('f-hi'); }
       else if (kind === 'score') st.scoreMin = num('f-score');
       else if (kind === 'days') st.daysMax = num('f-days');
-      closePop(); render();
+      closePop(); refilter();
     });
     cp.querySelector('[data-act=clear]')!.addEventListener('click', () => {
       if (kind === 'role') st.roles.clear();
@@ -291,7 +339,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
       else if (kind === 'pay') st.payLo = st.payHi = null;
       else if (kind === 'score') st.scoreMin = null;
       else if (kind === 'days') st.daysMax = null;
-      closePop(); render();
+      closePop(); refilter();
     });
   }
 

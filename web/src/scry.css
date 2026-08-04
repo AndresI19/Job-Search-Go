@@ -66,14 +66,17 @@ table.scry thead th {
   letter-spacing: .04em;
   text-transform: uppercase;
 }
-.scry .th-in { display: inline-flex; align-items: center; gap: 5px; }
+.scry .th-in { display: inline-flex; align-items: center; gap: 7px; }
 .scry .th-in .thl { cursor: pointer; }
-.scry .sar { display: inline-flex; flex-direction: column; line-height: .7; font-size: 8px; cursor: pointer; color: color-mix(in srgb, var(--muted) 55%, transparent); }
-.scry .sar i { font-style: normal; }
-.scry .sar .up.act, .scry .sar .dn.act { color: var(--accent); }
-.scry .thf { border: 0; background: transparent; color: color-mix(in srgb, var(--muted) 60%, transparent); cursor: pointer; font-size: 11px; padding: 1px 3px; border-radius: 4px; }
-.scry .thf:hover { color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
-.scry .thf.act { color: var(--accent); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+/* Prominent sort arrows: larger, and the active direction is filled in the accent. */
+.scry .sar { display: inline-flex; flex-direction: column; line-height: .6; font-size: 10px; cursor: pointer; color: var(--muted); }
+.scry .sar i { font-style: normal; opacity: .5; }
+.scry .sar .up.act, .scry .sar .dn.act { opacity: 1; color: var(--accent); }
+.scry .th-in .thl:hover ~ .sar, .scry .sar:hover { color: var(--accent); }
+/* Prominent filter funnel: a real bordered button, not a faint glyph. */
+.scry .thf { border: 1px solid var(--line); background: var(--panel); color: var(--muted); cursor: pointer; font-size: 12px; line-height: 1; padding: 3px 6px; border-radius: 6px; }
+.scry .thf:hover { color: var(--accent); border-color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.scry .thf.act { color: var(--accent-ink, #fff); background: var(--accent); border-color: transparent; }
 
 table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, transparent); }
 .scry .num { text-align: right; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; }
@@ -92,12 +95,16 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry .starbtn { border: 0; background: none; cursor: pointer; color: var(--muted); font-size: 15px; line-height: 1; padding: 2px 4px; border-radius: 6px; }
 .scry .starbtn:hover { color: #e0980a; }
 .scry .starbtn.on { color: #f0a500; }
-/* Salary-presence toggle in the context bar */
-.paytoggle { display: inline-flex; align-items: center; gap: 4px; margin-left: 8px; }
-.paytoggle .ptl { font-size: 10px; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); font-weight: 800; margin-right: 2px; }
-.paychip { border: 1px solid var(--line); background: var(--panel-2); color: var(--muted); border-radius: 999px; padding: 3px 9px; font: 700 11px/1 inherit; cursor: pointer; }
-.paychip:hover { color: var(--accent); border-color: var(--accent); }
-.paychip.on { background: var(--accent); color: var(--accent-ink, #fff); border-color: transparent; }
+/* Broader Filters menu button + badge, and the pager */
+.filt-open { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 4px 11px; font: 700 12px/1 inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
+.filt-open:hover { color: var(--accent); border-color: var(--accent); }
+.filt-badge { background: var(--accent); color: var(--accent-ink, #fff); border-radius: 999px; padding: 1px 7px; font: 700 10px/1 ui-monospace, monospace; }
+.filt-menu label { text-transform: none; letter-spacing: 0; }
+.filt-menu input[type=radio] { width: 14px; height: 14px; accent-color: var(--accent); }
+.scry-pager { display: flex; align-items: center; gap: 12px; margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.scry-pager button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 12px; font: 700 12.5px/1 inherit; cursor: pointer; }
+.scry-pager button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.scry-pager button:disabled { opacity: .45; cursor: default; }
 .scry .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-weight: 700; font-size: 11px; color: #191c28; }
 .scry .score { display: inline-flex; align-items: center; gap: 6px; justify-content: flex-end; }
 .scry .cdot { width: 8px; height: 8px; border-radius: 999px; display: inline-block; }
