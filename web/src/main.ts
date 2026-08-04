@@ -596,7 +596,8 @@ function showScry() {
 }
 function showConjure() {
   const root = showPanel('conjure-root');
-  if (!conjureMounted) { mountConjure(root, { api, authFetch }); conjureMounted = true; }
+  // Re-mount (re-fetch) on every show so a job just Consecrated in Scry appears here.
+  mountConjure(root, { api, authFetch });
 }
 
 // Aggregate tab: fetch the persisted listings (all, or just the latest scan when
