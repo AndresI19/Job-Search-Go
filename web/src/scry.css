@@ -121,6 +121,9 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry .starbtn:hover { color: #e0980a; }
 .scry .starbtn.on { color: #f0a500; }
 /* Broader Filters menu button + badge, and the pager */
+/* New search + Refresh live on the context bar (compact). */
+.scry-run { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+.scry-ctx .scry-run + .scry-run { margin-left: 2px; }
 .filt-open { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 4px 11px; font: 700 12px/1 inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
 .filt-open:hover { color: var(--accent); border-color: var(--accent); }
 .filt-badge { background: var(--accent); color: var(--accent-ink, #fff); border-radius: 999px; padding: 1px 7px; font: 700 10px/1 ui-monospace, monospace; }

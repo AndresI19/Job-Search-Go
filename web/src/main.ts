@@ -31,7 +31,6 @@ function toast(html) { const t = $('toast'); if (!t) return; t.innerHTML = html;
 function setMode(m) {
   mode = m;
   for (const b of document.querySelectorAll('#jb-modes button')) b.classList.toggle('on', b.dataset.mode === m);
-  $('jb-runbar').hidden = m !== 'scry'; // scan controls belong to Scry only
   $('search-pop').hidden = true;
   if (m === 'scry') showScry(); else showConjure();
 }
@@ -39,7 +38,7 @@ function showScry() {
   $('runview').hidden = true;
   $('scry-root').hidden = false;
   $('conjure-root').hidden = true;
-  if (!scryMounted) { mountScry($('scry-root'), { authFetch }); scryMounted = true; }
+  if (!scryMounted) { mountScry($('scry-root'), { authFetch, onNewSearch: openSearchAt, onRefresh: doRefresh }); scryMounted = true; }
 }
 function showConjure() {
   $('runview').hidden = true;
@@ -50,22 +49,20 @@ function showConjure() {
 function reloadScry() { scryMounted = false; if (mode === 'scry') showScry(); }
 document.querySelectorAll('#jb-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
-// ---- search popover ----
-function openSearch() { $('search-pop').hidden = false; }
+// ---- search popover (opened from the Scry ctx bar's New search button) ----
 function closeSearch() { $('search-pop').hidden = true; }
-$('new-search').addEventListener('click', (e) => {
-  e.stopPropagation();
+function openSearchAt(anchor) {
   const sp = $('search-pop');
   if (!sp.hidden) { sp.hidden = true; return; } // toggle closed
-  const r = $('new-search').getBoundingClientRect();
+  const r = anchor.getBoundingClientRect();
   sp.style.top = r.bottom + 6 + 'px';
   sp.style.left = Math.max(8, r.left) + 'px';
   sp.style.right = 'auto';
   sp.hidden = false;
-});
+}
 $('sp-close').addEventListener('click', closeSearch);
 $('search-pop').addEventListener('click', (e) => e.stopPropagation());
-document.addEventListener('click', (e) => { if (!$('search-pop').hidden && !e.target.closest('#new-search')) closeSearch(); });
+document.addEventListener('click', (e) => { if (!$('search-pop').hidden && !e.target.closest('#ctx-newsearch')) closeSearch(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSearch(); });
 
 // ---- search params: field + location catalogs (from api/config) ----
@@ -112,7 +109,7 @@ function collect() {
 // ---- scan: run + poll. Progress shows in the runview; results land in Scry. ----
 const setBar = (name, done, total) => { $('bar-' + name).style.width = (total ? Math.round((done / total) * 100) : 0) + '%'; $('num-' + name).textContent = done + ' / ' + total; };
 function showRun(on) { $('runview').hidden = !on; $('scry-root').hidden = on; $('conjure-root').hidden = true; }
-function setRunButtons(disabled) { for (const id of ['new-search', 'refresh', 'run']) { const b = $(id); if (b) b.disabled = disabled; } }
+function setRunButtons(disabled) { for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) { const b = $(id); if (b) b.disabled = disabled; } }
 
 async function run() {
   clearTimeout(pollTimer);
@@ -157,8 +154,9 @@ async function poll(id) {
 $('run').addEventListener('click', run);
 
 // ---- refresh: prune delisted jobs, then reload Scry ----
-$('refresh').addEventListener('click', async () => {
-  const b = $('refresh'); const label = b.textContent; b.disabled = true; b.textContent = 'Checking…';
+async function doRefresh() {
+  const b = $('ctx-refresh'); const label = b ? b.textContent : '';
+  if (b) { b.disabled = true; b.textContent = 'Checking…'; }
   try {
     const res = await authFetch(api('refresh'), { method: 'POST' });
     if (!res) throw new Error('Sign in as an admin to refresh.');
@@ -166,9 +164,8 @@ $('refresh').addEventListener('click', async () => {
     const { removed } = await res.json();
     toast(`🗑 Cleaned up <b>${removed}</b> old job${removed === 1 ? '' : 's'}`);
     reloadScry();
-  } catch (e) { setStatus(e.message, true); }
-  finally { b.disabled = false; b.textContent = label; }
-});
+  } catch (e) { setStatus(e.message, true); if (b) { b.disabled = false; b.textContent = label; } }
+}
 
 // ---- identity → run mode (the shared platform account button) ----
 mountAccountFab();

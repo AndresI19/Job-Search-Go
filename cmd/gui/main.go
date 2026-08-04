@@ -1055,6 +1055,13 @@ func (s *server) trash(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// Manual trash can dismiss ANY card, including a manifested one: clear the caller's
+	// applied flag first (so the availability sweep's manifested-guard doesn't block it),
+	// then retire the listing. (The automatic Refresh sweep still spares manifested jobs.)
+	uid := s.userID(r)
+	for _, u := range body.URLs {
+		_ = s.db.SetSaved(r.Context(), uid, u, db.SavedFlags{Pinned: true, Applied: false})
+	}
 	n, err := s.db.MarkUnavailable(r.Context(), body.URLs)
 	if err != nil {
 		httpErr(w, err)
