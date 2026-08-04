@@ -6,6 +6,7 @@ import '@platform/ui/base.css';
 import '@platform/ui/gate.css';
 import './app.css';
 import { mountScry } from './scry'; // the typed Scry data-grid (reimagined Discover view)
+import { mountConjure } from './conjure'; // the typed Conjure card board (reimagined Apply view)
 import { mountAccountFab } from '@platform/ui/gate';
 import { authFetch, current, isAdmin, onIdentity } from '@platform/ui/auth';
 
@@ -286,9 +287,10 @@ function renderTabs() {
 }
 function render() {
   renderTabs();
-  // Leaving the Scry view: hide its container and restore the legacy table.
+  // Leaving the Scry / Conjure views: hide their containers and restore the legacy table.
   // render() only runs for legacy tabs (never during a run), so unhiding is safe here.
   const sr = $('scry-root'); if (sr) sr.hidden = true;
+  const cr = $('conjure-root'); if (cr) cr.hidden = true;
   const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = '';
   const data = currentData();
   if (!data || !data.columns || !data.columns.length || !data.rows) {
@@ -564,19 +566,29 @@ document.querySelectorAll('#tabs .tab-btn').forEach(b => b.addEventListener('cli
   if (activeTab === 'aggregate') loadAggregate();
   else if (activeTab === 'applicator') loadApplicator();
   else if (activeTab === 'scry') showScry();
+  else if (activeTab === 'conjure') showConjure();
   else render();
 }));
 
-// Scry view: the typed data-grid, mounted once into its own container. It reads
-// api/results directly, so it is independent of the legacy table's data plumbing —
-// switching to it hides the table; any other tab (via render) restores it.
-let scryMounted = false;
-function showScry() {
+// Scry / Conjure views: typed modules, each mounted once into its own container. They
+// read the typed endpoints directly, independent of the legacy table's data plumbing —
+// switching to one hides the table; any other tab (via render) restores it.
+let scryMounted = false, conjureMounted = false;
+function showPanel(rootId) {
   renderTabs();
   const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = 'none';
   $('pager').innerHTML = '';
-  const root = $('scry-root'); root.hidden = false;
+  $('scry-root').hidden = rootId !== 'scry-root';
+  $('conjure-root').hidden = rootId !== 'conjure-root';
+  return $(rootId);
+}
+function showScry() {
+  const root = showPanel('scry-root');
   if (!scryMounted) { mountScry(root); scryMounted = true; }
+}
+function showConjure() {
+  const root = showPanel('conjure-root');
+  if (!conjureMounted) { mountConjure(root, { api, authFetch }); conjureMounted = true; }
 }
 
 // Aggregate tab: fetch the persisted listings (all, or just the latest scan when

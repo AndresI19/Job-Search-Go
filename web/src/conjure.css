@@ -1,0 +1,57 @@
+/* Conjure card board. Reads the platform design tokens; semantic pay colours are
+   fixed data encodings, not brand accents. */
+.croomnote { font-size: 12.5px; color: var(--muted); margin: 0 2px 14px; max-width: 74ch; line-height: 1.5; }
+.croomnote b { color: var(--ink); }
+.croomnote.err { color: #d0433b; }
+
+.chead-row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
+.csubs { display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 3px; gap: 2px; }
+.csubs button { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 7px 14px; font-weight: 800; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 8px; }
+.csubs button .c { font: 700 11px/1 ui-monospace, monospace; background: color-mix(in srgb, var(--ink) 12%, transparent); border-radius: 999px; padding: 2px 7px; }
+.csubs button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); }
+.csubs button.on .c { background: var(--accent); color: var(--accent-ink, #fff); }
+.discernbtn { margin-left: auto; border: 0; border-radius: 10px; padding: 8px 15px; color: var(--accent-ink, #fff); font-weight: 800; font-size: 13px; cursor: pointer;
+  background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 74%, #000)); box-shadow: 0 3px 12px color-mix(in srgb, var(--accent) 26%, transparent); }
+.discernbtn:hover { transform: translateY(-1px); }
+.discernbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+
+.cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 14px; }
+.cempty { color: var(--muted); font-size: 13px; padding: 20px 2px; }
+.ccard { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 16px 17px; display: flex; flex-direction: column; gap: 12px; position: relative; transition: box-shadow .16s, transform .16s; }
+.ccard:hover { box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); transform: translateY(-2px); }
+.ccard.unprepped { border-style: dashed; background: var(--panel-2); }
+.chead { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.ctitle { font-weight: 800; font-size: 15.5px; line-height: 1.25; letter-spacing: -.01em; }
+.cmeta { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+.pb { font-size: 10.5px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; padding: 3px 9px; border-radius: 6px; white-space: nowrap; flex: none; }
+.pb.posted { background: color-mix(in srgb, #2f9e44 16%, transparent); color: #2f9e44; }
+.pb.est { background: color-mix(in srgb, #d98600 15%, transparent); color: #d98600; border: 1px dashed color-mix(in srgb, #d98600 55%, transparent); padding: 2px 8px; }
+.pb.none { background: var(--panel-2); color: var(--muted); }
+
+.clines { display: flex; flex-direction: column; gap: 8px; font-size: 13px; }
+.clines .ln { display: grid; grid-template-columns: 70px 1fr; gap: 10px; align-items: start; }
+.clines .ln .k { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); padding-top: 2px; }
+.clines .ln.req .k { color: var(--ink); }
+.clines .ln.req .v { font-weight: 600; }
+.clines .ln.pref .v { color: var(--muted); }
+.clines .ln .v { line-height: 1.4; }
+.uinfo { font-size: 12.5px; color: var(--muted); }
+.uinfo .payr { font-family: ui-monospace, monospace; color: var(--ink); font-weight: 700; }
+
+.cfoot { display: flex; align-items: center; justify-content: space-between; gap: 12px; border-top: 1px solid var(--line); padding-top: 12px; }
+.pay { display: flex; flex-direction: column; gap: 1px; }
+.pay .amt { font: 800 15px/1 ui-monospace, monospace; }
+.pay .amt.contract { color: #d98600; }
+.pay .amt.est { color: #d98600; }
+.pay .amt.muted { color: var(--muted); font-weight: 700; }
+.pay .basis { font-size: 10px; color: var(--muted); text-transform: uppercase; letter-spacing: .04em; font-weight: 700; }
+.pay .basis.est { color: #d98600; }
+.cact { display: flex; flex-direction: column; align-items: flex-end; gap: 7px; }
+.openbtn { text-decoration: none; display: inline-block; border: 1px solid var(--accent); background: color-mix(in srgb, var(--accent) 12%, var(--panel)); color: var(--accent); border-radius: 10px; padding: 8px 14px; font-weight: 800; font-size: 13px; }
+.openbtn:hover { background: var(--accent); color: var(--accent-ink, #fff); }
+.manichk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
+.manichk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
+.gone { font-size: 11px; color: #d0433b; font-weight: 700; }
+
+.conjure-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); opacity: 0; pointer-events: none; transition: .25s; z-index: 60; }
+.conjure-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
