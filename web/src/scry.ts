@@ -13,6 +13,8 @@ const api = (p: string) => BASE + 'api/' + p;
 
 interface ScryDeps {
   authFetch: (url: string, init?: RequestInit) => Promise<Response | null>;
+  onNewSearch: (anchor: HTMLElement) => void; // open the search popover (host owns the scan)
+  onRefresh: () => void; // prune delisted jobs (host owns it)
 }
 
 const esc = (s: unknown) =>
@@ -225,6 +227,8 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
     root.innerHTML = `
       <div class="scry-ctx"><b>${total}</b> verified job${total === 1 ? '' : 's'}${fresh.length ? ` · <span class="newpill">✨ ${fresh.length} new</span>` : ''}
+        <button class="scry-run primary" id="ctx-newsearch">▶&nbsp; New search</button>
+        <button class="scry-run rbtn" id="ctx-refresh" title="Re-check listings; retire any no longer available">↻&nbsp; Refresh</button>
         <button class="filt-open" id="scry-filters">⏷ Filters${fc ? ` <span class="filt-badge">${fc}</span>` : ''}</button>
         ${anyFilter() ? '<button class="clearf" id="scry-clear">Clear all</button>' : ''}</div>
       <div class="scry-wrap"><table class="scry"><thead><tr>${headHTML()}</tr></thead><tbody>${body}</tbody></table></div>
@@ -249,6 +253,10 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     );
     const fo = root.querySelector('#scry-filters');
     if (fo) fo.addEventListener('click', (e) => { e.stopPropagation(); openFiltersMenu(fo as HTMLElement); });
+    const ns = root.querySelector('#ctx-newsearch');
+    if (ns) ns.addEventListener('click', (e) => { e.stopPropagation(); deps.onNewSearch(ns as HTMLElement); });
+    const rf = root.querySelector('#ctx-refresh');
+    if (rf) rf.addEventListener('click', () => deps.onRefresh());
     const clear = root.querySelector('#scry-clear');
     if (clear) clear.addEventListener('click', () => {
       st.pay = 'all'; st.newOnly = false; st.roles.clear(); st.locs.clear(); st.remote.clear();

@@ -79,7 +79,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   }
 
   function discernedCard(j: ApplyJob): string {
-    return `<article class="ccard" data-u="${esc(j.u)}">
+    return `<article class="ccard" draggable="true" data-u="${esc(j.u)}">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>
         ${payBadge(j)}</div>
       <div class="clines">
@@ -90,8 +90,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       </div>
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
         <div class="cact"><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a>
-          <label class="manichk"><input type="checkbox" class="manibox"> Mark manifested</label>
-          <button class="linkbtn trashbtn" type="button">🗑 Trash</button></div></div>
+          <button class="openbtn manifest-btn" type="button">✓ Mark manifested</button></div></div>
       ${j.a ? '' : '<div class="gone">⚠ No longer listed</div>'}
     </article>`;
   }
@@ -105,7 +104,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   }
   function consecratedCard(j: ApplyJob): string {
     const on = selected.has(j.u);
-    return `<article class="ccard unprepped${on ? ' sel' : ''}" data-u="${esc(j.u)}" role="button" tabindex="0">
+    return `<article class="ccard unprepped${on ? ' sel' : ''}" draggable="true" data-u="${esc(j.u)}" role="button" tabindex="0">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>
         ${payBadge(j)}</div>
       <div class="uinfo">${payState(j) === 'none' ? '<span class="muted">no pay</span>' : `<span class="payr">${kMoney(j.smin || j.emin)}–${kMoney(j.smax || j.emax)}</span>`}<span class="selhint">${on ? '✓ selected' : 'click to select'}</span></div>
@@ -115,7 +114,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   // A Manifested card: the summary if we have one, plus Open posting; no manifest
   // toggle (it's already applied).
   function manifestedCard(j: ApplyJob): string {
-    return `<article class="ccard applied" data-u="${esc(j.u)}">
+    return `<article class="ccard applied" draggable="true" data-u="${esc(j.u)}">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
       ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || '--')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || '--')}</span></div></div>` : ''}
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
@@ -160,15 +159,23 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     root.querySelectorAll<HTMLElement>('.csubs button').forEach((b) =>
       b.addEventListener('click', () => { sub = b.dataset.sub as typeof sub; render(); })
     );
-    root.querySelectorAll<HTMLInputElement>('.manibox').forEach((cb) =>
-      cb.addEventListener('change', () => markManifested(cb.closest('.ccard') as HTMLElement))
+    root.querySelectorAll<HTMLButtonElement>('.manifest-btn').forEach((b) =>
+      b.addEventListener('click', () => markManifested(b.closest('.ccard') as HTMLElement))
     );
     root.querySelectorAll<HTMLButtonElement>('.unmani').forEach((b) =>
       b.addEventListener('click', () => markUnmanifested(b.closest('.ccard') as HTMLElement))
     );
-    root.querySelectorAll<HTMLButtonElement>('.trashbtn').forEach((b) =>
-      b.addEventListener('click', (e) => { e.stopPropagation(); trashItem(b.closest('.ccard') as HTMLElement); })
-    );
+    // Drag any card onto the Trash tab to dismiss it (works from every Conjure page).
+    root.querySelectorAll<HTMLElement>('.ccard[draggable]').forEach((card) => {
+      card.addEventListener('dragstart', (e) => { (e as DragEvent).dataTransfer!.setData('text/plain', card.dataset.u!); card.classList.add('dragging'); });
+      card.addEventListener('dragend', () => card.classList.remove('dragging'));
+    });
+    const trashTab = root.querySelector<HTMLElement>('.csubs button[data-sub="trashed"]');
+    if (trashTab) {
+      trashTab.addEventListener('dragover', (e) => { e.preventDefault(); trashTab.classList.add('drop'); });
+      trashTab.addEventListener('dragleave', () => trashTab.classList.remove('drop'));
+      trashTab.addEventListener('drop', (e) => { e.preventDefault(); trashTab.classList.remove('drop'); const u = (e as DragEvent).dataTransfer!.getData('text/plain'); if (u) trashByUrl(u); });
+    }
     if (sub === 'consecrated') {
       root.querySelectorAll<HTMLElement>('.ccard.unprepped').forEach((card) =>
         card.addEventListener('click', () => { const u = card.dataset.u!; selected.has(u) ? selected.delete(u) : selected.add(u); render(); })
@@ -206,8 +213,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
 
   // Trash = dismiss a job: mark its listing unavailable. It leaves Scry and the shortlist
   // and lands in the Trash view. The server never trashes a manifested job.
-  function trashItem(card: HTMLElement): void {
-    const u = card.dataset.u!;
+  function trashByUrl(u: string): void {
     deps
       .authFetch(deps.api('applicator/trash'), {
         method: 'POST',
@@ -216,9 +222,10 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       })
       .then((res) => {
         if (!res) { toast('Sign in to trash jobs'); return; }
-        const j = jobs.find((x) => x.u === u);
+        const j = jobs.find((x) => x.u === u) || manifested.find((x) => x.u === u);
         jobs = jobs.filter((x) => x.u !== u);
-        if (j) trashed.unshift(j);
+        manifested = manifested.filter((x) => x.u !== u);
+        if (j && !trashed.some((x) => x.u === u)) trashed.unshift(j);
         render();
         toast('🗑 Trashed');
       })
