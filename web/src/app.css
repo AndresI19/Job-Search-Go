@@ -63,6 +63,38 @@
   .scry-runbar .primary { font-size: 13px; padding: 8px 16px; }
   .scry-runbar .primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
   .runbar-hint { font-size: 11.5px; color: var(--muted); }
+
+  /* ===== Jobomancer clean shell ===== */
+  .jb-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
+  .jb-brand { display: flex; align-items: center; gap: 8px; font-weight: 820; letter-spacing: -.01em; font-size: 16px; }
+  .jb-brand .zodiac { width: 22px; height: 22px; flex: none; }
+  .jb-modes { display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 11px; padding: 3px; gap: 2px; }
+  .jb-modes button { border: 0; background: transparent; color: var(--muted); border-radius: 8px; padding: 7px 16px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 7px; }
+  .jb-modes button .mg { font-size: 15px; line-height: 1; }
+  .jb-modes button.on { background: var(--panel); color: var(--ink); box-shadow: var(--shadow); }
+  .jb-modes button:hover:not(.on) { color: var(--ink); }
+  .jb-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; }
+  .jb-actions .primary { font-size: 13px; padding: 8px 15px; }
+  .jb-actions .primary:disabled, .jb-actions .rbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
+  .jb-body { max-width: 1260px; margin: 0 auto; padding: 16px 20px 44px; }
+  .jb-body .status { min-height: 0; margin-bottom: 10px; }
+  .jb-body .status:empty { margin: 0; }
+
+  .search-pop { position: fixed; top: 60px; right: 20px; width: 300px; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden; }
+  .search-pop[hidden] { display: none; }
+  .sp-head { display: flex; align-items: center; justify-content: space-between; padding: 11px 14px; border-bottom: 1px solid var(--line); font-weight: 800; font-size: 11px; letter-spacing: .08em; text-transform: uppercase; color: var(--accent); }
+  .sp-close { border: 0; background: transparent; color: var(--muted); cursor: pointer; font-size: 14px; padding: 2px 4px; }
+  .sp-close:hover { color: var(--ink); }
+  .sp-body { padding: 13px 14px; display: flex; flex-direction: column; gap: 9px; }
+  .sp-note { font-size: 11px; color: var(--muted); line-height: 1.45; }
+  .sp-field span { display: block; font-size: 11px; color: var(--muted); font-weight: 700; margin-bottom: 5px; }
+  .sp-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; font-size: 13px; }
+  .sp-row input[type=number] { width: 96px; text-align: right; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: 500 13px/1 ui-monospace, monospace; }
+  .sp-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
+  .sp-run { width: 100%; margin-top: 5px; justify-content: center; }
+
+  .toast[hidden] { display: none; }
+  .toast b { font-weight: 800; color: #fff; }
   /* Aggregate-only controls: the New-only filter and the Refresh (prune) button. */
   /* Sit just left of centre, right after the tabs — NOT pushed to the right, where
      they collided with the account FAB. */

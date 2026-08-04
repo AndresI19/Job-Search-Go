@@ -9,132 +9,54 @@
 </head>
 <body>
 
-<div class="layout collapsed" id="layout">
-  <aside class="banner">
-    <div class="filters-body">
-      <div class="side-head">
-        <h1><svg class="zodiac" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="zw" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs><g fill="none" stroke="url(#zw)" stroke-width="1.25" stroke-linecap="round"><circle cx="12" cy="12" r="10.4"/><circle cx="12" cy="12" r="5.5"/><g><line x1="12" y1="1.6" x2="12" y2="6.5"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(30 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(60 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(90 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(120 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(150 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(180 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(210 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(240 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(270 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(300 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(330 12 12)"/></g></g><circle cx="12" cy="12" r="1.6" fill="url(#zw)"/></svg> Jobomancer</h1>
-        <span class="sub">Scry the real jobs from the ghosts, then Conjure the applications.</span>
-      </div>
+<header class="jb-top">
+  <div class="jb-brand">
+    <svg class="zodiac" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="zw" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent)"/><stop offset="1" stop-color="var(--accent2)"/></linearGradient></defs><g fill="none" stroke="url(#zw)" stroke-width="1.25" stroke-linecap="round"><circle cx="12" cy="12" r="10.4"/><circle cx="12" cy="12" r="5.5"/><g><line x1="12" y1="1.6" x2="12" y2="6.5"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(30 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(60 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(90 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(120 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(150 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(180 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(210 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(240 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(270 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(300 12 12)"/><line x1="12" y1="1.6" x2="12" y2="6.5" transform="rotate(330 12 12)"/></g></g><circle cx="12" cy="12" r="1.6" fill="url(#zw)"/></svg>
+    Jobomancer
+  </div>
+  <div class="jb-modes" id="jb-modes">
+    <button type="button" data-mode="scry" class="on"><span class="mg">🔮</span> Scry</button>
+    <button type="button" data-mode="conjure"><span class="mg">🪄</span> Conjure</button>
+  </div>
+  <div class="jb-actions">
+    <button type="button" class="primary" id="new-search">▶&nbsp; New search</button>
+    <button type="button" class="rbtn" id="refresh" title="Re-check listings and drop any no longer available (admin)">↻&nbsp; Refresh</button>
+  </div>
+</header>
 
-      <fieldset>
-        <legend>Filters</legend>
-        <label class="field-full"><span>Field (searches all its roles)</span>
-          <div class="chipselect" id="fields"></div></label>
-        <label class="field-full"><span>Locations</span>
-          <div class="chipselect" id="locsel"></div></label>
-        <label class="row"><span>Allow remote anywhere</span><input type="checkbox" id="remote_ok"></label>
-        <label class="row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0"></label>
-        <label class="row"><span>Min salary ($)</span><input type="text" inputmode="numeric" class="numsep" id="min_salary"></label>
-        <label class="row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05"></label>
-        <label class="row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
-        <label class="row"><span>Estimate missing pay</span><input type="checkbox" id="estimate_salary"></label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Highlight thresholds</legend>
-        <label class="row"><span>Salary light ($)</span><input type="text" inputmode="numeric" class="numsep" id="salary_light"></label>
-        <label class="row"><span>Salary strong ($)</span><input type="text" inputmode="numeric" class="numsep" id="salary_strong"></label>
-        <label class="row"><span>Startup max headcount</span><input type="text" inputmode="numeric" class="numsep" id="startup_max"></label>
-      </fieldset>
-
-      <fieldset>
-        <legend>Recency (days)</legend>
-        <div class="inline-fields">
-          <label>Fresh ≤<input type="number" id="fresh" min="0"></label>
-          <label>Recent ≤<input type="number" id="recent" min="0"></label>
-          <label>Aging ≤<input type="number" id="aging" min="0"></label>
-        </div>
-      </fieldset>
-
-      <button class="primary run" id="run">▶&nbsp;&nbsp;Run search</button>
+<main class="jb-body">
+  <div class="status" id="status"></div>
+  <section class="runview" id="runview" hidden>
+    <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-target" id="run-target"></span><span class="run-note" id="run-note">mock · $0</span></div>
+    <div class="bars">
+      <div class="barrow"><span class="barlabel">Scrape</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 0</span></div>
+      <div class="barrow"><span class="barlabel">Verify</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 0</span></div>
+      <div class="barrow"><span class="barlabel">Budget</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
     </div>
+  </section>
+  <div id="scry-root"></div>
+  <div id="conjure-root" hidden></div>
+</main>
 
-    <button class="foldbar" id="toggle" aria-label="Show or hide filters" aria-expanded="true" title="Show/hide filters">
-      <span class="fold-label">Filters</span>
-      <span class="fold-chev">‹</span>
-    </button>
-  </aside>
-
-  <main>
-    <div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
-    <div class="status" id="status">Loading profile…</div>
-    <section class="runview" id="runview" hidden>
-      <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-target" id="run-target"></span><span class="run-note" id="run-note">mock · $0</span></div>
-      <div class="bars">
-        <div class="barrow"><span class="barlabel">Apify load</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 10</span></div>
-        <div class="barrow"><span class="barlabel">Post-process</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 10</span></div>
-        <div class="barrow"><span class="barlabel">Rate limit</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
-      </div>
-    </section>
-    <section class="runview" id="applicator-loading" hidden>
-      <div class="run-head"><h2>Summarizing your saved jobs…</h2><span class="run-note">Claude is reading each posting</span></div>
-      <div class="bars"><div class="barrow"><span class="barlabel">Summarized</span><div class="bar"><i class="bar-fill" id="bar-applicator"></i></div><span class="barnum" id="num-applicator">0 / 0</span></div></div>
-    </section>
-    <!-- Jobomancer run bar: scan + refresh, homed in the Scry shell. A real (admin) scan
-         persists to the aggregate and lands in Scry; Refresh prunes delisted jobs. -->
-    <div class="scry-runbar" id="scry-runbar">
-      <button class="primary" id="run-scry">▶&nbsp;&nbsp;New search</button>
-      <button class="rbtn" id="refresh-scry" title="Re-check listings and drop any no longer available (admin)">↻&nbsp; Refresh</button>
-      <span class="runbar-hint">Set your search, then run it — results land in Scry.</span>
-    </div>
-    <div class="tabs" id="tabs">
-      <button class="tab-btn active" data-tab="scry" title="Scry — the verified-jobs grid; sort/filter any column, New-first">✨ Scry</button>
-      <button class="tab-btn" data-tab="conjure" title="Conjure — your apply board of Consecrated &amp; Discerned jobs">🪄 Conjure</button>
-      <span class="tab-div" title="The original views, kept while Scry &amp; Conjure take over">Classic ↓</span>
-      <button class="tab-btn classic" data-tab="results">Results</button>
-      <button class="tab-btn classic" data-tab="aggregate" title="Every listing persisted across scans, deduplicated">Aggregate</button>
-      <button class="tab-btn classic" data-tab="saved" title="Jobs you starred">★ Saved <span class="tab-count" id="saved-count">0</span></button>
-      <button class="tab-btn classic" data-tab="applied" title="Jobs you ticked as applied">✓ Applied <span class="tab-count" id="applied-count">0</span></button>
-      <button class="tab-btn classic" data-tab="applicator" title="A batch-summarized apply page for your saved, not-yet-applied jobs">⚡ Applicator</button>
-      <!-- Aggregate-only controls: highlight just the latest scan, and prune dead listings. -->
-      <span class="agg-controls" id="agg-controls" hidden>
-        <label class="agg-new" title="Show only what the most recent scan added"><input type="checkbox" id="agg-new-only"> ✨ New only</label>
-        <button class="rbtn" id="refresh-btn" title="Check each listing and remove ones that are no longer available (admin)">↻&nbsp; Refresh</button>
-      </span>
-      <!-- Saved-tab control: kick off the Applicator batch over your not-yet-applied saved jobs. -->
-      <span class="agg-controls" id="saved-controls" hidden>
-        <button class="rbtn accent" id="launch-applicator" title="Summarize all your saved, not-yet-applied jobs into an apply page (admin, uses Claude)">⚡&nbsp; Launch Applicator</button>
-      </span>
-      <!-- Applicator-tab controls: filter by whether the posting lists a salary, and re-summarize newly saved jobs. -->
-      <span class="agg-controls" id="applicator-controls" hidden>
-        <span class="filt-label">Pay</span>
-        <button class="fchip" data-emp="salary">Salary</button>
-        <button class="fchip" data-emp="nosalary">No salary</button>
-        <button class="rbtn" id="relaunch-applicator" title="Summarize any newly saved jobs missing a summary">↻&nbsp; Update</button>
-      </span>
-    </div>
-    <div class="resbar">
-      <button class="rbtn" id="export" title="Download the current results as a CSV">⭳&nbsp; Export</button>
-      <button class="rbtn" id="import-btn" title="Load a previously exported results CSV">⭱&nbsp; Import</button>
-      <input type="file" id="import-file" accept=".csv,text/csv,text/plain,application/vnd.ms-excel,application/csv" hidden>
-      <span class="filt-sep"></span>
-      <div class="filt-wrap">
-        <button class="rbtn" id="filter-btn" title="Filter the results by location and company" aria-haspopup="true" aria-expanded="false">⏷&nbsp; Filters<span class="filt-badge" id="filter-badge" hidden>0</span></button>
-        <div class="filt-panel" id="filter-panel" hidden>
-          <div class="filt-panel-head"><span>Filter results</span><button class="filt-clear" id="filter-clear" type="button">Clear all</button></div>
-          <div class="filt-section">
-            <div class="filt-heading">Location</div>
-            <div class="filt-chips" id="loc-filters"><span class="filt-empty">Run a search to filter by location.</span></div>
-          </div>
-          <div class="filt-section">
-            <div class="filt-heading">Company</div>
-            <div class="filt-chips" id="cat-filters">
-              <button class="fchip" data-cat="f500" title="Fortune 500 companies"><i style="background:#FFE699"></i>F500</button>
-              <button class="fchip" data-cat="f1000" title="Fortune 1000 companies"><i style="background:#F4B183"></i>F1000</button>
-              <button class="fchip" data-cat="software" title="Software companies"><i style="background:#9BC2E6"></i>Software</button>
-              <button class="fchip" data-cat="startup" title="Startups"><i style="background:#D9C2E9"></i>Startup</button>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-    <div class="tablewrap"><div class="empty" id="table">Set your filters, then press <b>Run</b> to fetch a suite of jobs.</div></div>
-    <div class="scry-view" id="scry-root" hidden></div>
-    <div class="conjure-view" id="conjure-root" hidden></div>
-    <div class="pager" id="pager"></div>
-  </main>
+<!-- Search popover: field, locations, and keep-filters. Opened by "New search"; its own
+     Run search executes the scan. -->
+<div class="search-pop" id="search-pop" hidden>
+  <div class="sp-head"><span>New search</span><button type="button" class="sp-close" id="sp-close" aria-label="Close">✕</button></div>
+  <div class="sp-body">
+    <div class="sp-note">Scans LinkedIn + Indeed (1,000 each). These narrow what's kept; results land in Scry.</div>
+    <label class="sp-field"><span>Field</span><div class="chipselect" id="fields"></div></label>
+    <label class="sp-field"><span>Locations</span><div class="chipselect" id="locsel"></div></label>
+    <label class="sp-row"><span>Remote anywhere</span><input type="checkbox" id="remote_ok" checked></label>
+    <label class="sp-row"><span>Max age (days)</span><input type="number" id="max_age_days" min="0" value="30"></label>
+    <label class="sp-row"><span>Min salary ($)</span><input type="number" id="min_salary" min="0" step="1000" value="150000"></label>
+    <label class="sp-row"><span>Min score (0–1)</span><input type="number" id="min_score" min="0" max="1" step="0.05" value="0.5"></label>
+    <label class="sp-row"><span>Include likely-ghosts</span><input type="checkbox" id="include_ghosts"></label>
+    <label class="sp-row"><span>Estimate missing pay</span><input type="checkbox" id="estimate_salary" checked></label>
+    <button type="button" class="primary sp-run" id="run">▶&nbsp;&nbsp;Run search</button>
+  </div>
 </div>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
 
 </body>
 </html>
