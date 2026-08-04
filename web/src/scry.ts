@@ -93,7 +93,7 @@ interface State {
   daysMax: number | null;
 }
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 50;
 
 export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const st: State = {
@@ -184,8 +184,12 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     const dataCols = COLS.map((c, i) => {
       const on = i === st.sortIdx;
       const arrows = `<span class="sar" data-sort="${i}"><i class="up${on && st.sortDir === 1 ? ' act' : ''}">▲</i><i class="dn${on && st.sortDir === -1 ? ' act' : ''}">▼</i></span>`;
-      const funnel = c.filter ? `<button class="thf${filterActive(c.filter) ? ' act' : ''}" data-filter="${c.filter}" title="Filter">▾</button>` : '';
-      return `<th class="th ${c.num ? 'num' : ''}"><span class="th-in"><span class="thl" data-sort="${i}">${esc(c.label)}</span>${arrows}${funnel}</span></th>`;
+      // Merge the filter affordance INTO the header name: a filterable column's name
+      // opens the filter (▾ built into the label); the ▲▼ arrows sort. Non-filterable
+      // names sort on click.
+      const nameCls = 'thl' + (c.filter ? ' thl-filter' + (filterActive(c.filter) ? ' act' : '') : '');
+      const nameAttr = c.filter ? `data-filter="${c.filter}"` : `data-sort="${i}"`;
+      return `<th class="th ${c.num ? 'num' : ''}"><span class="th-in"><span class="${nameCls}" ${nameAttr}>${esc(c.label)}${c.filter ? ' ▾' : ''}</span>${arrows}</span></th>`;
     }).join('');
     return `<th class="th starh" title="Consecrate">★</th>` + dataCols;
   }
@@ -234,7 +238,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
         refilter();
       })
     );
-    root.querySelectorAll<HTMLElement>('.thf').forEach((el) =>
+    root.querySelectorAll<HTMLElement>('.thl-filter').forEach((el) =>
       el.addEventListener('click', (e) => { e.stopPropagation(); openFilter(el.dataset.filter as FilterKind, el); })
     );
     root.querySelectorAll<HTMLButtonElement>('.starbtn').forEach((b) =>
@@ -254,7 +258,9 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
   // The broader Filters menu — salary presence and New-only, consolidated in one place.
   function openFiltersMenu(anchor: HTMLElement): void {
+    if (popKey === 'menu') { closePop(); return; } // clicking Filters while open closes it
     closePop();
+    popKey = 'menu';
     const cp = document.createElement('div');
     cp.className = 'scry-colpop filt-menu';
     const sal = (['all', 'has', 'none'] as const).map((k) => `<label><input type="radio" name="fm-sal" data-sal="${k}" ${st.pay === k ? 'checked' : ''}>${k === 'all' ? 'All jobs' : k === 'has' ? 'Has a salary' : 'No salary listed'}</label>`).join('');
@@ -294,14 +300,17 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   }
 
   let pop: HTMLElement | null = null;
-  const closePop = () => { if (pop) { pop.remove(); pop = null; } };
+  let popKey: string | null = null; // which control the open popover belongs to (for toggle)
+  const closePop = () => { if (pop) { pop.remove(); pop = null; } popKey = null; };
   document.addEventListener('click', (e) => {
-    if (pop && !(e.target as HTMLElement).closest('.scry-colpop') && !(e.target as HTMLElement).closest('.thf')) closePop();
+    if (pop && !(e.target as HTMLElement).closest('.scry-colpop') && !(e.target as HTMLElement).closest('.thl-filter') && !(e.target as HTMLElement).closest('#scry-filters')) closePop();
   });
   const uniq = (pick: (r: Result) => string) => [...new Set(st.rows.map(pick))].filter(Boolean).sort();
 
   function openFilter(kind: FilterKind, anchor: HTMLElement): void {
+    if (popKey === 'col:' + kind) { closePop(); return; } // clicking the same column filter closes it
     closePop();
+    popKey = 'col:' + kind;
     const cp = document.createElement('div');
     cp.className = 'scry-colpop';
     const checks = (title: string, opts: Array<[string, string]>, has: (v: string) => boolean) =>
