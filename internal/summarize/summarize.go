@@ -6,7 +6,9 @@
 //
 //   - CLISummarizer shells out to the `claude` command, reusing a Claude Code
 //     login (a subscription) so no API key is needed — local dev.
-//   - APISummarizer calls the Anthropic API with a key — the in-cluster backend.
+//   - APISummarizer calls the Anthropic API with a key — a keyed in-cluster backend.
+//   - GeminiSummarizer calls Google's Gemini API with a free-tier key ($0) — the
+//     in-cluster backend when an Anthropic key is not worth the cost/billing.
 //   - MockSummarizer derives a cheap summary from the listing's own fields, so the
 //     whole batch flow can be proven end to end for $0.
 //
@@ -98,6 +100,9 @@ func FromEnv() (Summarizer, error) {
 		inner, defaultLim = NewCLISummarizer(modelID), 3
 	case "api":
 		inner, err, defaultLim = NewAPISummarizer(modelID), nil, 16
+	case "gemini":
+		// Free-tier keyed backend; lower concurrency to stay inside the free RPM quota.
+		inner, defaultLim = NewGeminiSummarizer(modelID), 4
 	case "mock":
 		inner, defaultLim = MockSummarizer{}, 16
 	default:
