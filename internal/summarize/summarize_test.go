@@ -31,7 +31,7 @@ func TestMockSummarizerContractDetection(t *testing.T) {
 	if p.Employment != "permanent" {
 		t.Errorf("default employment = %q, want permanent", p.Employment)
 	}
-	if p.Required != "Not specified" || p.Preferred != "None stated" || p.Role == "" {
+	if p.Required != "--" || p.Preferred != "--" || p.Role == "" {
 		t.Errorf("defaults not filled: %+v", p)
 	}
 }

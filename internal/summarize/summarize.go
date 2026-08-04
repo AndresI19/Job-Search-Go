@@ -42,10 +42,10 @@ type Summarizer interface {
 // separates contract/temp/freelance work from a permanent salaried role, since the
 // Applicator treats the two very differently (comp basis, term, benefits).
 const summarySchema = `{"type":"object","properties":` +
-	`{"required":{"type":"string","description":"must-have experience and qualifications in one line (years, seniority, key skills); 'Not specified' if none stated"},` +
-	`"preferred":{"type":"string","description":"nice-to-have/preferred/bonus experience in one line; 'None stated' if none"},` +
+	`{"required":{"type":"string","description":"must-have experience and qualifications in one line (years, seniority, key skills); '--' if none stated"},` +
+	`"preferred":{"type":"string","description":"nice-to-have/preferred/bonus experience in one line; '--' if none"},` +
 	`"role":{"type":"string","description":"what the person in this role actually does day-to-day, one line"},` +
-	`"company":{"type":"string","description":"what the company does or its product, one line; 'Not specified' if the posting does not say"},` +
+	`"company":{"type":"string","description":"what the company does or its product, one line; '--' if the posting does not say"},` +
 	`"employment":{"type":"string","enum":["contract","permanent","unclear"],"description":"contract/temp/freelance engagement vs a permanent salaried position"},` +
 	`"pay_note":{"type":"string","description":"the pay basis if the posting states one, e.g. '$75/hr' or '$120k-$160k/yr'; empty string if not stated"}},` +
 	`"required":["required","preferred","role","company","employment"]}`
@@ -66,10 +66,10 @@ func (r rawSummary) toModel() Summary {
 		emp = "unclear"
 	}
 	return Summary{
-		Required:   dflt(r.Required, "Not specified"),
-		Preferred:  dflt(r.Preferred, "None stated"),
-		Role:       dflt(r.Role, "—"),
-		Company:    dflt(r.Company, "Not specified"),
+		Required:   dflt(r.Required, "--"),
+		Preferred:  dflt(r.Preferred, "--"),
+		Role:       dflt(r.Role, "--"),
+		Company:    dflt(r.Company, "--"),
 		Employment: emp,
 		PayNote:    strings.TrimSpace(r.PayNote),
 	}

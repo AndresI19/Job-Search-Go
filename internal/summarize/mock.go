@@ -35,8 +35,8 @@ func (MockSummarizer) Summarize(_ context.Context, l model.Listing) (Summary, er
 		role = "—"
 	}
 	return Summary{
-		Required:   "Not specified",
-		Preferred:  "None stated",
+		Required:   "--",
+		Preferred:  "--",
 		Role:       role,
 		Company:    firstSentence(l.Description),
 		Employment: emp,
@@ -49,7 +49,7 @@ func (MockSummarizer) Summarize(_ context.Context, l model.Listing) (Summary, er
 func firstSentence(s string) string {
 	s = strings.TrimSpace(s)
 	if s == "" {
-		return "Not specified"
+		return "--"
 	}
 	if i := strings.IndexAny(s, ".\n"); i > 0 && i < 160 {
 		s = s[:i]

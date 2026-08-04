@@ -63,6 +63,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let jobs: ApplyJob[] = []; // saved, not applied (Consecrated + Discerned)
   let manifested: ApplyJob[] = []; // saved AND applied
   let sub: 'consecrated' | 'discerned' | 'manifested' = 'discerned';
+  const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
 
   function payFoot(j: ApplyJob): string {
     const ps = payState(j);
@@ -83,8 +84,8 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       <div class="clines">
         <div class="ln"><span class="k">Role</span><span class="v">${esc(j.role || '—')}</span></div>
         <div class="ln"><span class="k">Company</span><span class="v">${esc(j.does || '—')}</span></div>
-        <div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || 'Not specified')}</span></div>
-        <div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || 'None stated')}</span></div>
+        <div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || '--')}</span></div>
+        <div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || '--')}</span></div>
       </div>
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
         <div class="cact"><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a>
@@ -93,10 +94,11 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     </article>`;
   }
   function consecratedCard(j: ApplyJob): string {
-    return `<article class="ccard unprepped" data-u="${esc(j.u)}">
+    const on = selected.has(j.u);
+    return `<article class="ccard unprepped${on ? ' sel' : ''}" data-u="${esc(j.u)}" role="button" tabindex="0">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>
         ${payBadge(j)}</div>
-      <div class="uinfo">${payState(j) === 'none' ? '<span class="muted">no pay</span>' : `<span class="payr">${kMoney(j.smin || j.emin)}–${kMoney(j.smax || j.emax)}</span>`}</div>
+      <div class="uinfo">${payState(j) === 'none' ? '<span class="muted">no pay</span>' : `<span class="payr">${kMoney(j.smin || j.emin)}–${kMoney(j.smax || j.emax)}</span>`}<span class="selhint">${on ? '✓ selected' : 'click to select'}</span></div>
     </article>`;
   }
 
@@ -105,7 +107,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   function manifestedCard(j: ApplyJob): string {
     return `<article class="ccard applied" data-u="${esc(j.u)}">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
-      ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || 'Not specified')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || 'None stated')}</span></div></div>` : ''}
+      ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || '--')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || '--')}</span></div></div>` : ''}
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
         <div class="cact"><span class="doneflag">✓ Manifested</span><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a></div></div>
     </article>`;
@@ -120,29 +122,41 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       ? shown.map(cardFn).join('')
       : `<p class="cempty">${sub === 'discerned' ? 'Nothing discerned yet — Consecrate jobs in Scry, then Discern them here.' : sub === 'consecrated' ? 'No un-discerned saved jobs. ✨ Discern reads each into an apply card.' : 'Nothing manifested yet — Open a posting to apply, then mark it manifested.'}</p>`;
 
+    // Discern lives only on the Consecrated stage (it reads un-discerned jobs): select
+    // tiles, or Select all, then Discern the selection.
+    const nSel = consecrated.filter((j) => selected.has(j.u)).length;
+    const actions = sub === 'consecrated' && consecrated.length
+      ? `<button class="linkbtn" id="conjure-selall">${nSel === consecrated.length ? 'Clear' : 'Select all'}</button>
+         <button class="discernbtn" id="conjure-discern"${nSel ? '' : ' disabled'}>✨ Discern${nSel ? ` (${nSel})` : ''}</button>`
+      : '';
+
     root.innerHTML = `
-      <p class="croomnote">Your shortlist, read for applying. <b>Discern</b> has Claude read each saved posting into an apply card — required vs preferred, role &amp; company, contract-native pay. <b>Open posting</b> to apply on their site, then <b>mark it manifested</b> yourself.</p>
+      <p class="croomnote">Your shortlist, read for applying. <b>Consecrate</b> jobs in Scry, <b>Discern</b> the ones you pick into apply cards, then <b>Open posting</b> and <b>mark it manifested</b> yourself.</p>
       <div class="chead-row">
         <div class="csubs">
           <button data-sub="consecrated" class="${sub === 'consecrated' ? 'on' : ''}">★ Consecrated <span class="c">${consecrated.length}</span></button>
           <button data-sub="discerned" class="${sub === 'discerned' ? 'on' : ''}">Discerned <span class="c">${discerned.length}</span></button>
           <button data-sub="manifested" class="${sub === 'manifested' ? 'on' : ''}">✓ Manifested <span class="c">${manifested.length}</span></button>
         </div>
-        <button class="discernbtn" id="conjure-discern"${consecrated.length ? '' : ' disabled'}>✨ Discern${consecrated.length ? ` (${consecrated.length})` : ''}</button>
+        <div class="cactions">${actions}</div>
       </div>
       <div class="cgrid">${cards}</div>`;
 
     root.querySelectorAll<HTMLElement>('.csubs button').forEach((b) =>
-      b.addEventListener('click', () => {
-        sub = b.dataset.sub as 'consecrated' | 'discerned';
-        render();
-      })
+      b.addEventListener('click', () => { sub = b.dataset.sub as typeof sub; render(); })
     );
     root.querySelectorAll<HTMLInputElement>('.manibox').forEach((cb) =>
       cb.addEventListener('change', () => markManifested(cb.closest('.ccard') as HTMLElement))
     );
+    if (sub === 'consecrated') {
+      root.querySelectorAll<HTMLElement>('.ccard.unprepped').forEach((card) =>
+        card.addEventListener('click', () => { const u = card.dataset.u!; selected.has(u) ? selected.delete(u) : selected.add(u); render(); })
+      );
+      const sa = root.querySelector('#conjure-selall');
+      if (sa) sa.addEventListener('click', () => { const all = consecrated.every((j) => selected.has(j.u)); consecrated.forEach((j) => (all ? selected.delete(j.u) : selected.add(j.u))); render(); });
+    }
     const db = root.querySelector('#conjure-discern');
-    if (db) db.addEventListener('click', () => discern(db as HTMLButtonElement));
+    if (db) db.addEventListener('click', () => discern(db as HTMLButtonElement, [...selected]));
   }
 
   // Mark manifested = honor-system self-report (applying happens off-site). Persists via
@@ -171,11 +185,12 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
 
   // Discern = batch-summarize the Consecrated (saved, not-yet-summarized) jobs. The
   // server summarizes all such jobs; we poll its progress, then reload.
-  function discern(btn: HTMLButtonElement): void {
+  function discern(btn: HTMLButtonElement, urls: string[]): void {
+    if (!urls.length) return;
     btn.disabled = true;
     btn.textContent = '✨ Discerning…';
     deps
-      .authFetch(deps.api('applicator/launch'), { method: 'POST' })
+      .authFetch(deps.api('applicator/launch'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ urls }) })
       .then((res) => {
         if (!res) throw new Error('Sign in as an admin to Discern');
         if (!res.ok) return res.text().then((t) => Promise.reject(new Error(t)));
@@ -193,6 +208,8 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       .then((j) => {
         if (j.status === 'done') {
           toast(`🔮 Discerned ${j.total} job${j.total === 1 ? '' : 's'}`);
+          selected.clear();
+          sub = 'discerned';
           load();
         } else if (j.status === 'error') {
           toast('Discern failed');

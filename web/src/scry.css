@@ -48,8 +48,18 @@
   background: var(--panel);
   box-shadow: var(--shadow, 0 1px 3px rgba(20, 22, 40, .09));
   scrollbar-width: thin;
+  /* ~80% of the viewport, centered — full-bleed out of the narrower content column. */
+  width: 80vw;
+  max-width: 1600px;
+  margin-left: 50%;
+  transform: translateX(-50%);
 }
-table.scry { border-collapse: collapse; width: auto; font-size: 12.5px; }
+/* Fixed layout so column widths stay put when sorting/filtering (no content-driven jump). */
+table.scry { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12.5px; }
+.scry th, .scry td { overflow: hidden; text-overflow: ellipsis; }
+.scry th.starh, .scry td.starcell { width: 30px; }
+.scry thead th.starh + th { width: 24%; } /* Title */
+.scry th.num { width: 78px; }
 table.scry th, table.scry td {
   border-bottom: 1px solid var(--line);
   padding: 6px 11px;
