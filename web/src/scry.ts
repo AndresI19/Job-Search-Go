@@ -65,6 +65,8 @@ const recTint = (d: number | null) =>
 // Posted salary earns the green "strong pay" tint; estimates are rendered in blue
 // (see payCells) so they're never mistaken for the employer's number.
 const payTintPosted = (max: number) => (max >= 200000 ? 'var(--pay-strong)' : max >= 150000 ? 'var(--pay-light)' : '');
+// Estimates use the SAME threshold logic, in blue shades (never the posted green).
+const payTintEst = (max: number) => (max >= 200000 ? 'var(--est-strong)' : max >= 150000 ? 'var(--est-light)' : '');
 
 type FilterKind = 'role' | 'location' | 'remote' | 'pay' | 'score' | 'days';
 interface Col {
@@ -146,14 +148,13 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
   function payCells(r: Result): string {
     if (r.payState === 'none') return `<td class="num muted">—</td><td class="num muted">—</td>`;
-    if (r.payState === 'estimated') {
-      // Estimates in distinct shades of blue, with ~ — never the posted-pay green.
-      const cell = (v: number, shade: string) => `<td class="num estcell" style="background:${shade}" title="Estimated — no pay stated in the posting"><span class="tint">~${money(v)}</span></td>`;
-      return cell(r.salaryEstMin, 'var(--est-light)') + cell(r.salaryEstMax, 'var(--est-strong)');
-    }
-    const tint = payTintPosted(r.salaryMax);
-    const cell = (v: number) => `<td class="num"${tint ? ` style="background:${tint}"` : ''}><span class="${tint ? 'tint' : ''}">${money(v)}</span></td>`;
-    return cell(r.salaryMin) + cell(r.salaryMax);
+    const est = r.payState === 'estimated';
+    const lo = est ? r.salaryEstMin : r.salaryMin;
+    const hi = est ? r.salaryEstMax : r.salaryMax;
+    const tint = est ? payTintEst(hi) : payTintPosted(hi); // same threshold logic; blue for estimates
+    const cell = (v: number) =>
+      `<td class="num${est ? ' estcell' : ''}"${tint ? ` style="background:${tint}"` : ''}${est ? ' title="Estimated — no pay stated in the posting"' : ''}><span class="${tint ? 'tint' : ''}">${est ? '~' : ''}${money(v)}</span></td>`;
+    return cell(lo) + cell(hi);
   }
 
   function rowHTML(r: Result): string {

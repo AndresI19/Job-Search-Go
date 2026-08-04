@@ -84,7 +84,7 @@ func TestGeminiSummarizeToleratesProse(t *testing.T) {
 		t.Errorf("summary = %+v", got)
 	}
 	// Unspecified fields fall back to their defaults via toModel.
-	if got.Preferred != "None stated" || got.Employment != "unclear" {
+	if got.Preferred != "--" || got.Employment != "unclear" {
 		t.Errorf("defaults not applied: %+v", got)
 	}
 }

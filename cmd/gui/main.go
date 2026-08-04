@@ -979,6 +979,25 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 			todo = append(todo, sl.Result.Listing)
 		}
 	}
+	// Optional selection: {"urls":[...]} limits the batch to the chosen Consecrated jobs
+	// (multiselect Discern). An empty/absent body summarizes all un-discerned saved jobs.
+	var sel struct {
+		URLs []string `json:"urls"`
+	}
+	_ = json.NewDecoder(r.Body).Decode(&sel)
+	if len(sel.URLs) > 0 {
+		want := make(map[string]bool, len(sel.URLs))
+		for _, u := range sel.URLs {
+			want[u] = true
+		}
+		kept := todo[:0]
+		for _, l := range todo {
+			if want[l.URL] {
+				kept = append(kept, l)
+			}
+		}
+		todo = kept
+	}
 
 	id := "app-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 	job := &applicatorJob{id: id, status: "running", total: len(todo)}
