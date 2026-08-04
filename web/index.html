@@ -9,7 +9,7 @@
 </head>
 <body>
 
-<div class="layout" id="layout">
+<div class="layout collapsed" id="layout">
   <aside class="banner">
     <div class="filters-body">
       <div class="side-head">
@@ -74,9 +74,9 @@
     <!-- Jobomancer run bar: scan + refresh, homed in the Scry shell. A real (admin) scan
          persists to the aggregate and lands in Scry; Refresh prunes delisted jobs. -->
     <div class="scry-runbar" id="scry-runbar">
-      <button class="primary" id="run-scry">▶&nbsp;&nbsp;Run search</button>
+      <button class="primary" id="run-scry">▶&nbsp;&nbsp;New search</button>
       <button class="rbtn" id="refresh-scry" title="Re-check listings and drop any no longer available (admin)">↻&nbsp; Refresh</button>
-      <span class="runbar-hint">Scans LinkedIn + Indeed; a live scan lands in Scry.</span>
+      <span class="runbar-hint">Set your search, then run it — results land in Scry.</span>
     </div>
     <div class="tabs" id="tabs">
       <button class="tab-btn active" data-tab="scry" title="Scry — the verified-jobs grid; sort/filter any column, New-first">✨ Scry</button>
