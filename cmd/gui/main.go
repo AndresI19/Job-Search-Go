@@ -121,6 +121,7 @@ func main() {
 	mux.HandleFunc(base+"api/applicator/launch", s.applicatorLaunch)
 	mux.HandleFunc(base+"api/applicator/status", s.applicatorStatus)
 	mux.HandleFunc(base+"api/applicator/trash", s.trash)
+	mux.HandleFunc(base+"api/applicator/restore", s.restore)
 	mux.HandleFunc(base+"api/applicator", s.applicator)
 	mux.HandleFunc(base+"api/health", s.health)
 	mux.HandleFunc(base+"version", s.version)
@@ -1068,6 +1069,33 @@ func (s *server) trash(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, map[string]int{"trashed": int(n)})
+}
+
+// restore un-retires the given listings — bringing a trashed job back into Scry and the
+// shortlist. Requires an identity.
+func (s *server) restore(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	if s.userID(r) == "" {
+		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+		http.Error(w, "sign in to restore listings", http.StatusUnauthorized)
+		return
+	}
+	var body struct {
+		URLs []string `json:"urls"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		httpErr(w, err)
+		return
+	}
+	n, err := s.db.MarkAvailable(r.Context(), body.URLs)
+	if err != nil {
+		httpErr(w, err)
+		return
+	}
+	writeJSON(w, map[string]int{"restored": int(n)})
 }
 
 // applicatorStatus reports a launch's progress for the loading screen.

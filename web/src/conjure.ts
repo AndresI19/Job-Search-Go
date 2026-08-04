@@ -99,7 +99,8 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   function trashedCard(j: ApplyJob): string {
     return `<article class="ccard trashed" data-u="${esc(j.u)}">
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
-      <div class="uinfo"><span class="muted">Trashed — dismissed or no longer listed</span></div>
+      <div class="cfoot"><span class="muted">Trashed — dismissed or no longer listed</span>
+        <button class="openbtn restore-btn" type="button">↩ Restore</button></div>
     </article>`;
   }
   function consecratedCard(j: ApplyJob): string {
@@ -170,6 +171,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       card.addEventListener('dragstart', (e) => { (e as DragEvent).dataTransfer!.setData('text/plain', card.dataset.u!); card.classList.add('dragging'); });
       card.addEventListener('dragend', () => card.classList.remove('dragging'));
     });
+    root.querySelectorAll<HTMLButtonElement>('.restore-btn').forEach((b) =>
+      b.addEventListener('click', () => restoreItem(b.closest('.ccard') as HTMLElement))
+    );
     const trashTab = root.querySelector<HTMLElement>('.csubs button[data-sub="trashed"]');
     if (trashTab) {
       trashTab.addEventListener('dragover', (e) => { e.preventDefault(); trashTab.classList.add('drop'); });
@@ -213,6 +217,26 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
 
   // Trash = dismiss a job: mark its listing unavailable. It leaves Scry and the shortlist
   // and lands in the Trash view. The server never trashes a manifested job.
+  // Restore un-trashes a job (available=true again) — it returns to Scry and the shortlist.
+  function restoreItem(card: HTMLElement): void {
+    const u = card.dataset.u!;
+    deps
+      .authFetch(deps.api('applicator/restore'), {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ urls: [u] }),
+      })
+      .then((res) => {
+        if (!res) { toast('Sign in to restore jobs'); return; }
+        const j = trashed.find((x) => x.u === u);
+        trashed = trashed.filter((x) => x.u !== u);
+        if (j && !jobs.some((x) => x.u === u)) jobs.unshift(j);
+        render();
+        toast('↩ Restored to your shortlist');
+      })
+      .catch(() => toast('Could not restore'));
+  }
+
   function trashByUrl(u: string): void {
     deps
       .authFetch(deps.api('applicator/trash'), {
