@@ -1060,6 +1060,21 @@ func (s *server) applicator(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
+	// view=applied → the Manifested set (saved AND applied), for the Conjure Manifested
+	// stage. Same row shape, so the client renders it through the same card.
+	if strings.EqualFold(r.URL.Query().Get("view"), "applied") {
+		all, aerr := s.db.SavedListings(r.Context(), userID)
+		if aerr != nil {
+			httpErr(w, aerr)
+			return
+		}
+		saved = saved[:0]
+		for _, sl := range all {
+			if sl.Applied {
+				saved = append(saved, sl)
+			}
+		}
+	}
 	urls := make([]string, 0, len(saved))
 	for _, sl := range saved {
 		urls = append(urls, sl.Result.Listing.URL)

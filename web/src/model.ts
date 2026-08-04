@@ -15,6 +15,7 @@ export interface Result {
   applyUrl?: string;
   title: string;
   company: string;
+  companyTier?: 'f500' | 'software' | 'startup';
   location: string;
   remote: boolean;
   posted?: string; // RFC3339 UTC; absent when the source gave no date

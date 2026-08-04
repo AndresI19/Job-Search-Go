@@ -6,7 +6,13 @@ import (
 
 	"github.com/AndresI19/Job-Search-Go/internal/db"
 	"github.com/AndresI19/Job-Search-Go/internal/model"
+	"github.com/AndresI19/Job-Search-Go/internal/profile"
+	"github.com/AndresI19/Job-Search-Go/internal/report"
 )
+
+// scryStartupMax bounds the startup-tier headcount band for company tinting, taken
+// from the default profile (the aggregate view has no per-request profile).
+var scryStartupMax = profile.Default().Highlight.StartupMax
 
 // resultDTO is the typed, presentation-free JSON shape for one verified listing —
 // the Jobomancer data contract that replaces report.Preview's {columns, cells, fill}
@@ -22,6 +28,7 @@ type resultDTO struct {
 	ApplyURL     string   `json:"applyUrl,omitempty"`
 	Title        string   `json:"title"`
 	Company      string   `json:"company"`
+	CompanyTier  string   `json:"companyTier,omitempty"` // f500 | software | startup | "" — drives the company-column colour
 	Location     string   `json:"location"`
 	Remote       bool     `json:"remote"`
 	Posted       string   `json:"posted,omitempty"` // RFC3339 UTC; "" when the source gave no date
@@ -64,7 +71,8 @@ func toResultDTO(r model.Result, isNew bool) resultDTO {
 	}
 	return resultDTO{
 		URL: l.URL, ApplyURL: l.ExternalApplyURL, Title: l.Title, Company: l.Company,
-		Location: l.Location, Remote: l.Remote, Posted: posted,
+		CompanyTier: report.CompanyTier(l.Company, l.CompanySize, scryStartupMax, l.Industries),
+		Location:    l.Location, Remote: l.Remote, Posted: posted,
 		Applicants: l.ApplicantCount, YearsExp: l.YearsExperience,
 		SalaryMin: l.SalaryMin, SalaryMax: l.SalaryMax,
 		SalaryEstMin: l.SalaryEstMin, SalaryEstMax: l.SalaryEstMax,

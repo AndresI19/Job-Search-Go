@@ -592,7 +592,7 @@ function showPanel(rootId) {
 }
 function showScry() {
   const root = showPanel('scry-root');
-  if (!scryMounted) { mountScry(root); scryMounted = true; }
+  if (!scryMounted) { mountScry(root, { authFetch }); scryMounted = true; }
 }
 function showConjure() {
   const root = showPanel('conjure-root');
