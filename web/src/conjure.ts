@@ -207,11 +207,21 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       });
   }
 
+  // api/applicator is USER-SCOPED (SavedNotApplied keys on the caller's identity), so the
+  // read must carry the platform bearer — authFetch first, plain fetch as the guest
+  // fallback. A plain-fetch-only read sends no identity, so the server sees no user and
+  // returns nothing: that is why a job Consecrated in Scry never appeared here.
+  function getJobs(path: string): Promise<{ jobs: ApplyJob[] }> {
+    return deps
+      .authFetch(deps.api(path))
+      .then((r) => r || fetch(deps.api(path)))
+      .then((r) => (r.ok ? (r.json() as Promise<{ jobs: ApplyJob[] }>) : Promise.reject(new Error(path + ' ' + r.status))));
+  }
   function load(): void {
     root.innerHTML = '<p class="croomnote">Loading your shortlist…</p>';
     Promise.all([
-      fetch(deps.api('applicator')).then((r) => (r.ok ? (r.json() as Promise<{ jobs: ApplyJob[] }>) : Promise.reject(new Error('applicator ' + r.status)))),
-      fetch(deps.api('applicator') + '?view=applied').then((r) => (r.ok ? (r.json() as Promise<{ jobs: ApplyJob[] }>) : Promise.resolve({ jobs: [] }))).catch(() => ({ jobs: [] as ApplyJob[] })),
+      getJobs('applicator'),
+      getJobs('applicator?view=applied').catch(() => ({ jobs: [] as ApplyJob[] })),
     ])
       .then(([active, applied]) => {
         jobs = active.jobs || [];
