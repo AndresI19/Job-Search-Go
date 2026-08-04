@@ -71,6 +71,13 @@
       <div class="run-head"><h2>Summarizing your saved jobs…</h2><span class="run-note">Claude is reading each posting</span></div>
       <div class="bars"><div class="barrow"><span class="barlabel">Summarized</span><div class="bar"><i class="bar-fill" id="bar-applicator"></i></div><span class="barnum" id="num-applicator">0 / 0</span></div></div>
     </section>
+    <!-- Jobomancer run bar: scan + refresh, homed in the Scry shell. A real (admin) scan
+         persists to the aggregate and lands in Scry; Refresh prunes delisted jobs. -->
+    <div class="scry-runbar" id="scry-runbar">
+      <button class="primary" id="run-scry">▶&nbsp;&nbsp;Run search</button>
+      <button class="rbtn" id="refresh-scry" title="Re-check listings and drop any no longer available (admin)">↻&nbsp; Refresh</button>
+      <span class="runbar-hint">Scans LinkedIn + Indeed; a live scan lands in Scry.</span>
+    </div>
     <div class="tabs" id="tabs">
       <button class="tab-btn active" data-tab="scry" title="Scry — the verified-jobs grid; sort/filter any column, New-first">✨ Scry</button>
       <button class="tab-btn" data-tab="conjure" title="Conjure — your apply board of Consecrated &amp; Discerned jobs">🪄 Conjure</button>
