@@ -52,6 +52,12 @@
   .tab-btn { border: 1px solid var(--line); border-bottom: none; background: var(--panel-2); color: var(--muted); font: 700 12px/1 inherit; padding: 8px 15px; border-radius: 10px 10px 0 0; cursor: pointer; }
   .tab-btn:hover { color: var(--ink); }
   .tab-btn.active { background: var(--panel); color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
+  /* Jobomancer rebrand: zodiac mark + demoted "Classic" legacy tabs. */
+  .side-head h1 { display: flex; align-items: center; gap: 7px; }
+  .zodiac { width: 20px; height: 20px; flex: none; }
+  .tab-div { display: inline-flex; align-items: center; align-self: center; font-size: 10px; font-weight: 800; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); padding: 0 4px 0 10px; opacity: .7; }
+  .tab-btn.classic { font-size: 11px; padding: 6px 11px; opacity: .72; }
+  .tab-btn.classic:hover, .tab-btn.classic.active { opacity: 1; }
   /* Aggregate-only controls: the New-only filter and the Refresh (prune) button. */
   /* Sit just left of centre, right after the tabs — NOT pushed to the right, where
      they collided with the account FAB. */

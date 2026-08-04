@@ -100,7 +100,7 @@ const RUN_YEAR = new Date().getFullYear(); // drop the year on postings from thi
 // Saved jobs (favorites + applied) are kept as full row SNAPSHOTS so the Saved tab
 // survives a refresh even without re-running. The current Results table is persisted
 // too (see setLast), so refreshing no longer loses it.
-let savedRows = [], savedColumns = [], activeTab = 'results';
+let savedRows = [], savedColumns = [], activeTab = 'scry'; // Jobomancer lands on the Scry grid
 // The Aggregate tab's data (persisted listings from the server) and its "New only"
 // filter. Fetched on demand from /api/listings; empty when persistence is off.
 let aggregateData = { columns: [], rows: [] };
@@ -286,6 +286,10 @@ function renderTabs() {
   const ac2 = $('applicator-controls'); if (ac2) ac2.hidden = activeTab !== 'applicator';
 }
 function render() {
+  // Scry / Conjure are the default two-room views: any render() while one is active
+  // routes to its panel (so the initial load and post-run refreshes land there too).
+  if (activeTab === 'scry') { showScry(); return; }
+  if (activeTab === 'conjure') { showConjure(); return; }
   renderTabs();
   // Leaving the Scry / Conjure views: hide their containers and restore the legacy table.
   // render() only runs for legacy tabs (never during a run), so unhiding is safe here.
@@ -445,6 +449,10 @@ function resetRun() { const b = $('run'); b.disabled = false; b.innerHTML = '▶
 
 async function run() {
   clearTimeout(pollTimer);
+  // A scan uses the classic Results view (runview progress + table live there). Switch to
+  // it so Run stays fully functional until it is re-homed into the Scry shell.
+  activeTab = 'results'; renderTabs();
+  $('scry-root').hidden = true; $('conjure-root').hidden = true;
   const b = $('run'); b.disabled = true; b.textContent = 'Running…';
   $('pager').innerHTML = '';
   setBar('apify', 0, 10); setBar('verify', 0, 10);
