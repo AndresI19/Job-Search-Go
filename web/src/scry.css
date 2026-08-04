@@ -49,8 +49,8 @@
   box-shadow: var(--shadow, 0 1px 3px rgba(20, 22, 40, .09));
   scrollbar-width: thin;
   /* ~80% of the viewport, centered — full-bleed out of the narrower content column. */
-  width: 80vw;
-  max-width: 1600px;
+  width: 92vw;
+  max-width: 1760px;
   margin-left: 50%;
   transform: translateX(-50%);
 }
@@ -58,13 +58,23 @@
 /* Fixed layout + a comfortable min-width: columns keep their size when sorting (no jump)
    and never squish — the wrap scrolls horizontally on narrow viewports instead. */
 table.scry { border-collapse: collapse; width: 100%; min-width: 1160px; table-layout: fixed; font-size: 12.5px; }
+/* Long text columns ellipsize; short / numeric / icon cells override to show IN FULL. */
 .scry th, .scry td { overflow: hidden; text-overflow: ellipsis; }
-/* Star column pinned left so the favouriting button is always visible while scrolling. */
-.scry th.starh, .scry td.starcell { width: 40px; position: sticky; left: 0; z-index: 3; background: var(--panel); }
+.scry td.num, .scry th.num, .scry td.starcell, .scry th.starh, .scry td.remote { overflow: visible; text-overflow: clip; }
+/* Star column pinned left so the favouriting button is always fully visible. */
+.scry th.starh, .scry td.starcell { position: sticky; left: 0; z-index: 3; background: var(--panel); text-align: center; }
 .scry thead th.starh { z-index: 4; background: var(--panel-2); }
 .scry tbody tr:hover td.starcell { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
-.scry thead th.starh + th { width: 22%; } /* Title */
-.scry th.num { width: 92px; }
+/* Explicit widths, generous enough that content fits (six-figure salaries, pills). */
+.scry thead th:nth-child(1) { width: 44px; }   /* ★ */
+.scry thead th:nth-child(2) { width: 23%; }    /* Title */
+.scry thead th:nth-child(3) { width: 150px; }  /* Role */
+.scry thead th:nth-child(4) { width: 180px; }  /* Company */
+.scry thead th:nth-child(5) { width: 140px; }  /* Loc */
+.scry thead th:nth-child(6) { width: 58px; }   /* Rem */
+.scry thead th:nth-child(7), .scry thead th:nth-child(8) { width: 104px; } /* Pay */
+.scry thead th:nth-child(9) { width: 86px; }   /* Posted */
+.scry thead th:nth-child(10) { width: 92px; }  /* Score */
 table.scry th, table.scry td {
   border-bottom: 1px solid var(--line);
   padding: 6px 11px;
