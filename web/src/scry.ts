@@ -257,7 +257,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     const cp = document.createElement('div');
     cp.className = 'scry-colpop filt-menu';
     const sal = (['all', 'has', 'none'] as const).map((k) => `<label><input type="radio" name="fm-sal" data-sal="${k}" ${st.pay === k ? 'checked' : ''}>${k === 'all' ? 'All jobs' : k === 'has' ? 'Has a salary' : 'No salary listed'}</label>`).join('');
-    cp.innerHTML = `<div class="ct">Salary</div>${sal}<div class="ct" style="margin-top:9px">Recency</div><label><input type="checkbox" id="fm-new" ${st.newOnly ? 'checked' : ''}> ✨ New since last scan only</label><div class="row2"><button data-act="clear">Clear</button><button class="app" data-act="apply">Apply</button></div>`;
+    cp.innerHTML = `<div class="ct">Salary</div>${sal}<div class="ct" style="margin-top:9px">Recency</div><label><input type="checkbox" id="fm-new" ${st.newOnly ? 'checked' : ''}> ✨ New</label><div class="row2"><button data-act="clear">Clear</button><button class="app" data-act="apply">Apply</button></div>`;
     document.body.appendChild(cp);
     pop = cp;
     const rect = anchor.getBoundingClientRect();

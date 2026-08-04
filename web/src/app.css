@@ -61,6 +61,7 @@
   /* Run bar homed in the Scry shell */
   .scry-runbar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
   .scry-runbar .primary { font-size: 13px; padding: 8px 16px; }
+  .scry-runbar .primary:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
   .runbar-hint { font-size: 11.5px; color: var(--muted); }
   /* Aggregate-only controls: the New-only filter and the Refresh (prune) button. */
   /* Sit just left of centre, right after the tabs — NOT pushed to the right, where

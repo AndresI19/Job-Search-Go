@@ -296,6 +296,7 @@ function render() {
   const sr = $('scry-root'); if (sr) sr.hidden = true;
   const cr = $('conjure-root'); if (cr) cr.hidden = true;
   const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = '';
+  const rb = document.querySelector('.resbar'); if (rb) rb.style.display = ''; // classic toolbar back
   const data = currentData();
   if (!data || !data.columns || !data.columns.length || !data.rows) {
     $('table').outerHTML = '<div class="empty" id="table">' + emptyMsg() + '</div>';
@@ -445,7 +446,7 @@ function showRunview(on) {
   $('runview').hidden = !on;
   document.querySelector('.tablewrap').style.display = on ? 'none' : '';
 }
-function resetRun() { const b = $('run'); b.disabled = false; b.innerHTML = '▶&nbsp;&nbsp;Run search'; }
+function resetRun() { const b = $('run'); b.disabled = false; b.innerHTML = '▶&nbsp;&nbsp;Run search'; const rs = $('run-scry'); if (rs) rs.disabled = false; }
 
 async function run() {
   clearTimeout(pollTimer);
@@ -454,6 +455,7 @@ async function run() {
   activeTab = 'results'; renderTabs();
   $('scry-root').hidden = true; $('conjure-root').hidden = true;
   const b = $('run'); b.disabled = true; b.textContent = 'Running…';
+  const rs = $('run-scry'); if (rs) rs.disabled = true; // grey out the run-bar button while scanning
   $('pager').innerHTML = '';
   setBar('apify', 0, 10); setBar('verify', 0, 10);
   $('run-title').textContent = 'Starting…';
@@ -517,8 +519,13 @@ async function poll(id) {
 }
 
 $('run').addEventListener('click', run);
-// Run bar in the Scry shell — the same scan, triggered from the reimagined view.
-$('run-scry')?.addEventListener('click', run);
+// Run bar in the Scry shell: the play button brings up the search params (the sidebar)
+// rather than scanning immediately; the panel's own "Run search" executes the scan.
+$('run-scry')?.addEventListener('click', () => {
+  $('layout').classList.remove('collapsed');
+  $('toggle')?.setAttribute('aria-expanded', 'true');
+  document.querySelector('.banner')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+});
 // Refresh from the Scry shell: prune delisted jobs, then reload the grid to reflect it.
 $('refresh-scry')?.addEventListener('click', async () => {
   const b = $('refresh-scry'); const label = b.textContent; b.disabled = true; b.textContent = 'Checking…';
@@ -604,6 +611,10 @@ let scryMounted = false, conjureMounted = false;
 function showPanel(rootId) {
   renderTabs();
   const tw = document.querySelector('.tablewrap'); if (tw) tw.style.display = 'none';
+  // The reimagined views own their own controls — hide the legacy toolbar and the
+  // per-tab control stubs (Salary/No-salary, New-only, Export/Import/Filters).
+  const rb = document.querySelector('.resbar'); if (rb) rb.style.display = 'none';
+  for (const id of ['agg-controls', 'saved-controls', 'applicator-controls']) { const el = $(id); if (el) el.hidden = true; }
   $('pager').innerHTML = '';
   $('scry-root').hidden = rootId !== 'scry-root';
   $('conjure-root').hidden = rootId !== 'conjure-root';
