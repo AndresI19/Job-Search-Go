@@ -53,6 +53,11 @@ a quiet Scry status line).
     remote) as checkbox lists; numeric (pay, score, posted) as ranges. Replaces the #81 faceted
     menu and the resbar company chips.
   - **Posted** cell hover → the actual date.
+  - **New-first, always.** Jobs added by the latest scan pin to the **top** of the grid under a
+    clear `✨ New since last scan` divider (with an `Earlier` divider below), and stay first
+    **even when a column sort is applied** — the active sort orders *within* the New and Earlier
+    groups, never across them. This replaces the removed "New" tab: freshness is a persistent
+    grouping, not a separate view you switch to.
 - **Top bar**: `▶ Run` opens the **search panel** (configure, then launch from inside it — the
   launch is never separated from its inputs); `↻ Refresh` stands alone and works in **both**
   rooms (re-check + prune delisted, for a visit that's only about your shortlist).
