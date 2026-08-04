@@ -8,7 +8,7 @@ import '@platform/ui/gate.css';
 import './app.css';
 import { mountScry } from './scry';
 import { mountConjure } from './conjure';
-import { mountAccountFab } from '@platform/ui/gate';
+import { mountAccountFab, mountGate } from '@platform/ui/gate';
 import { authFetch, isAdmin, onIdentity } from '@platform/ui/auth';
 
 const BASE = import.meta.env.BASE_URL;
@@ -168,7 +168,15 @@ async function doRefresh() {
 }
 
 // ---- identity → run mode (the shared platform account button) ----
-mountAccountFab();
+// nudgeGuest keeps the FAB present for signed-out visitors (a guest identity is
+// established silently), and onUpgrade opens the full gate — which carries the
+// "I have an account" sign-in door. Without these, signing out left no way back in:
+// the FAB rendered empty and a guest's only action was another sign-out. Reload on
+// completion so Scry/Conjure refetch under the resolved identity's bearer token.
+mountAccountFab({
+  nudgeGuest: true,
+  onUpgrade: () => mountGate({ onDone: () => location.reload() }),
+});
 onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; });
 
 // ---- boot: load the field/location catalogs, then show Scry ----
