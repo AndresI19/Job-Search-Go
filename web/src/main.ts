@@ -31,6 +31,8 @@ function toast(html) { const t = $('toast'); if (!t) return; t.innerHTML = html;
 function setMode(m) {
   mode = m;
   for (const b of document.querySelectorAll('#jb-modes button')) b.classList.toggle('on', b.dataset.mode === m);
+  $('jb-runbar').hidden = m !== 'scry'; // scan controls belong to Scry only
+  $('search-pop').hidden = true;
   if (m === 'scry') showScry(); else showConjure();
 }
 function showScry() {
@@ -51,7 +53,16 @@ document.querySelectorAll('#jb-modes button').forEach((b) => b.addEventListener(
 // ---- search popover ----
 function openSearch() { $('search-pop').hidden = false; }
 function closeSearch() { $('search-pop').hidden = true; }
-$('new-search').addEventListener('click', (e) => { e.stopPropagation(); $('search-pop').hidden = !$('search-pop').hidden; });
+$('new-search').addEventListener('click', (e) => {
+  e.stopPropagation();
+  const sp = $('search-pop');
+  if (!sp.hidden) { sp.hidden = true; return; } // toggle closed
+  const r = $('new-search').getBoundingClientRect();
+  sp.style.top = r.bottom + 6 + 'px';
+  sp.style.left = Math.max(8, r.left) + 'px';
+  sp.style.right = 'auto';
+  sp.hidden = false;
+});
 $('sp-close').addEventListener('click', closeSearch);
 $('search-pop').addEventListener('click', (e) => e.stopPropagation());
 document.addEventListener('click', (e) => { if (!$('search-pop').hidden && !e.target.closest('#new-search')) closeSearch(); });

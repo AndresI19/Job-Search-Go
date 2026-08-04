@@ -109,7 +109,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
       ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || '--')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || '--')}</span></div></div>` : ''}
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
-        <div class="cact"><span class="doneflag">✓ Manifested</span><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a></div></div>
+        <div class="cact"><span class="doneflag">✓ Manifested</span><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a><button class="linkbtn unmani">Un-manifest</button></div></div>
     </article>`;
   }
 
@@ -148,6 +148,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     root.querySelectorAll<HTMLInputElement>('.manibox').forEach((cb) =>
       cb.addEventListener('change', () => markManifested(cb.closest('.ccard') as HTMLElement))
     );
+    root.querySelectorAll<HTMLButtonElement>('.unmani').forEach((b) =>
+      b.addEventListener('click', () => markUnmanifested(b.closest('.ccard') as HTMLElement))
+    );
     if (sub === 'consecrated') {
       root.querySelectorAll<HTMLElement>('.ccard.unprepped').forEach((card) =>
         card.addEventListener('click', () => { const u = card.dataset.u!; selected.has(u) ? selected.delete(u) : selected.add(u); render(); })
@@ -181,6 +184,27 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         toast('✨ Manifested — moved to Manifested');
       })
       .catch(() => toast('Could not mark manifested'));
+  }
+
+  // Un-manifest = undo an accidental manifest: clear the applied flag; the job returns
+  // to the shortlist (Discerned/Consecrated) with its summary intact.
+  function markUnmanifested(card: HTMLElement): void {
+    const u = card.dataset.u!;
+    deps
+      .authFetch(deps.api('saved'), {
+        method: 'PUT',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ url: u, pinned: true, applied: false }),
+      })
+      .then((res) => {
+        if (!res) { toast('Sign in to change manifested jobs'); return; }
+        const j = manifested.find((x) => x.u === u);
+        manifested = manifested.filter((x) => x.u !== u);
+        if (j) jobs.unshift(j);
+        render();
+        toast('Un-manifested — back in your shortlist');
+      })
+      .catch(() => toast('Could not un-manifest'));
   }
 
   // Discern = batch-summarize the Consecrated (saved, not-yet-summarized) jobs. The

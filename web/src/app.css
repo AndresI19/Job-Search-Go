@@ -82,6 +82,10 @@
   .jb-body { max-width: 1260px; margin: 0 auto; padding: 16px 20px 44px; }
   .jb-body .status { min-height: 0; margin-bottom: 10px; }
   .jb-body .status:empty { margin: 0; }
+  .jb-runbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
+  .jb-runbar[hidden] { display: none; }
+  .jb-runbar .primary { font-size: 13px; padding: 8px 16px; }
+  .jb-runbar .primary:disabled, .jb-runbar .rbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
 
   .search-pop { position: fixed; top: 64px; right: 70px; width: 300px; z-index: 40; background: var(--panel); border: 1px solid var(--line); border-radius: 14px; box-shadow: var(--shadow-lg); overflow: hidden; }
   .search-pop[hidden] { display: none; }

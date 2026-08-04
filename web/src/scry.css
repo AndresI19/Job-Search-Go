@@ -55,11 +55,16 @@
   transform: translateX(-50%);
 }
 /* Fixed layout so column widths stay put when sorting/filtering (no content-driven jump). */
-table.scry { border-collapse: collapse; width: 100%; table-layout: fixed; font-size: 12.5px; }
+/* Fixed layout + a comfortable min-width: columns keep their size when sorting (no jump)
+   and never squish — the wrap scrolls horizontally on narrow viewports instead. */
+table.scry { border-collapse: collapse; width: 100%; min-width: 1160px; table-layout: fixed; font-size: 12.5px; }
 .scry th, .scry td { overflow: hidden; text-overflow: ellipsis; }
-.scry th.starh, .scry td.starcell { width: 30px; }
-.scry thead th.starh + th { width: 24%; } /* Title */
-.scry th.num { width: 78px; }
+/* Star column pinned left so the favouriting button is always visible while scrolling. */
+.scry th.starh, .scry td.starcell { width: 40px; position: sticky; left: 0; z-index: 3; background: var(--panel); }
+.scry thead th.starh { z-index: 4; background: var(--panel-2); }
+.scry tbody tr:hover td.starcell { background: color-mix(in srgb, var(--accent) 6%, var(--panel)); }
+.scry thead th.starh + th { width: 22%; } /* Title */
+.scry th.num { width: 92px; }
 table.scry th, table.scry td {
   border-bottom: 1px solid var(--line);
   padding: 6px 11px;
