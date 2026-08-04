@@ -59,7 +59,8 @@
 /* Drag any card onto the Trash tab to dismiss it. */
 .ccard[draggable] { cursor: grab; }
 .ccard.dragging { opacity: .45; }
-.csubs button[data-sub="trashed"].drop { outline: 2px dashed var(--accent); outline-offset: -2px; color: var(--accent); background: color-mix(in srgb, var(--accent) 10%, transparent); }
+/* Turn the Trash tab RED while a card is dragged over it. */
+.csubs button[data-sub="trashed"].drop { outline: 2px dashed #d0433b; outline-offset: -2px; color: #d0433b; background: color-mix(in srgb, #d0433b 14%, transparent); }
 /* Consecrated multiselect */
 .ccard.unprepped { cursor: pointer; }
 .ccard.unprepped:hover { border-color: var(--accent); }

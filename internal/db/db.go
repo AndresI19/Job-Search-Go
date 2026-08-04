@@ -257,6 +257,16 @@ func (d *DB) MarkUnavailable(ctx context.Context, urls []string) (int64, error) 
 	return tag.RowsAffected(), err
 }
 
+// MarkAvailable un-retires listings — restoring a job from Trash back into Scry and the
+// shortlist.
+func (d *DB) MarkAvailable(ctx context.Context, urls []string) (int64, error) {
+	if !d.Enabled() || len(urls) == 0 {
+		return 0, nil
+	}
+	tag, err := d.pool.Exec(ctx, `UPDATE listings SET available = true WHERE url = ANY($1)`, urls)
+	return tag.RowsAffected(), err
+}
+
 // SavedFlags is a user's pin/applied state for one URL.
 type SavedFlags struct {
 	Pinned  bool `json:"pinned"`

@@ -177,7 +177,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
       <td><span class="pill" style="background:${hashColor(r.location || '—')}">${esc(r.location || '—')}</span></td>
       <td class="remote ${r.remote ? 'yes' : 'no'}">${r.remote ? '✓' : '✗'}</td>
       ${payCells(r)}
-      <td class="num posted ${d != null ? 'tint' : ''}"${d != null ? ` style="background:${recTint(d)}"` : ''} title="${r.posted ? 'Posted ' + esc(postedDate(r.posted)) : 'Posted date not given'}">${d != null ? d + 'd' : '—'}</td>
+      <td class="num posted ${d != null ? 'tint' : ''}"${d != null ? ` style="background:${recTint(d)}"` : ''} data-tip="${r.posted ? 'Posted ' + esc(postedDate(r.posted)) : 'Posted date not given'}">${d != null ? d + 'd' : '—'}</td>
       <td class="num"><span class="score">${r.score.toFixed(2)}<span class="cdot ${tone}" title="${esc(r.confidence)}"></span></span></td>
     </tr>`;
   }
@@ -368,6 +368,30 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   }
 
   // Load the verified set and the user's already-consecrated URLs (best-effort).
+  // Custom tooltip for the Posted cell (data-tip) — a 350ms dwell, ~30% faster than the
+  // browser's native title delay. Delegated on root (survives re-renders); set up once.
+  if (!root.dataset.tipReady) {
+    root.dataset.tipReady = '1';
+    const tip = document.createElement('div');
+    tip.className = 'scry-tip';
+    document.body.appendChild(tip);
+    let tipTimer = 0;
+    root.addEventListener('mouseover', (e) => {
+      const cell = (e.target as HTMLElement).closest('[data-tip]') as HTMLElement | null;
+      clearTimeout(tipTimer);
+      if (!cell) { tip.style.display = 'none'; return; }
+      const text = cell.dataset.tip || '';
+      tipTimer = window.setTimeout(() => {
+        tip.textContent = text;
+        tip.style.display = 'block';
+        const r = cell.getBoundingClientRect();
+        tip.style.left = Math.max(8, Math.min(r.left, window.innerWidth - tip.offsetWidth - 8)) + 'px';
+        tip.style.top = r.bottom + 6 + 'px';
+      }, 350);
+    });
+    root.addEventListener('mouseout', () => { clearTimeout(tipTimer); tip.style.display = 'none'; });
+  }
+
   root.innerHTML = `<div class="scry-ctx">Loading verified jobs…</div>`;
   Promise.all([
     fetch(api('results')).then((r) => (r.ok ? (r.json() as Promise<ResultsResponse>) : Promise.reject(new Error('results ' + r.status)))),
