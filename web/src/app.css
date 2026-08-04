@@ -66,7 +66,7 @@
 
   /* ===== Jobomancer clean shell ===== */
   /* padding-right reserves space so the header actions don't sit under the account FAB. */
-  .jb-top { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; padding: 12px 64px 12px 20px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
+  .jb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 60px 8px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
   .jb-brand { display: flex; align-items: center; gap: 8px; font-weight: 820; letter-spacing: -.01em; font-size: 16px; }
   .jb-brand .zodiac { width: 22px; height: 22px; flex: none; }
   /* Prominent, centered mode switch with per-room colour (Scry indigo, Conjure teal). */
@@ -79,7 +79,7 @@
   .jb-actions { display: flex; align-items: center; gap: 8px; }
   .jb-actions .primary { font-size: 13px; padding: 8px 15px; }
   .jb-actions .primary:disabled, .jb-actions .rbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
-  .jb-body { max-width: 1260px; margin: 0 auto; padding: 16px 20px 44px; }
+  .jb-body { max-width: 1600px; margin: 0 auto; padding: 8px 12px 22px; }
   .jb-body .status { min-height: 0; margin-bottom: 10px; }
   .jb-body .status:empty { margin: 0; }
   .jb-runbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
