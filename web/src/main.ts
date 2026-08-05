@@ -106,17 +106,25 @@ function collect() {
   };
 }
 
-// ---- scan: run + poll. Progress shows in the runview; results land in Scry. ----
-const setBar = (name, done, total) => { $('bar-' + name).style.width = (total ? Math.round((done / total) * 100) : 0) + '%'; $('num-' + name).textContent = done + ' / ' + total; };
-function showRun(on) { $('runview').hidden = !on; $('scry-root').hidden = on; $('conjure-root').hidden = true; }
+// ---- scan: run + poll. A slim live strip shows ABOVE Scry (results stay in view). ----
+// The strip stays hidden until a run starts; showRun keeps Scry mounted beneath it rather
+// than swapping to a full-page takeover, so the prior results remain visible while scanning.
+function showRun(on) { if (on) showScry(); $('runview').hidden = !on; }
 function setRunButtons(disabled) { for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) { const b = $(id); if (b) b.disabled = disabled; } }
+function resetLive() {
+  $('runview').classList.remove('done');
+  $('run-title').textContent = 'Starting…';
+  $('live-done').textContent = '0'; $('live-total').textContent = '0';
+  $('live-bar').style.width = '0%';
+  $('run-note').hidden = true;
+  $('live-spend').textContent = '$0.00 / $5.00';
+}
 
 async function run() {
   clearTimeout(pollTimer);
   closeSearch();
   setRunButtons(true);
-  setBar('apify', 0, 0); setBar('verify', 0, 0);
-  $('run-title').textContent = 'Starting…';
+  resetLive();
   showRun(true);
   try {
     const body = JSON.stringify(collect());
@@ -131,20 +139,27 @@ async function poll(id) {
     const res = await fetch(api('run') + '?id=' + encodeURIComponent(id));
     if (!res.ok) throw new Error(await res.text());
     const j = await res.json();
-    setBar('apify', j.apify.done, j.apify.total);
-    setBar('verify', j.verify.done, j.verify.total);
-    $('run-target').textContent = j.apify.total ? `up to ${j.apify.total.toLocaleString()} jobs · LinkedIn + Indeed` : '';
-    $('bar-rate').style.width = Math.min(100, (j.rate.used / j.rate.limit) * 100) + '%';
-    $('num-rate').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
-    $('run-title').textContent = j.phase === 'apify' ? 'Scraping LinkedIn + Indeed…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Done';
-    $('run-note').textContent = j.spends ? 'LIVE · spends Apify + Claude' : 'mock · $0';
+    // One track follows the ACTIVE phase (scrape → verify); the label names it, and the
+    // running spend rides on the right. The Budget bar is folded into that single readout.
+    const cur = j.phase === 'apify' ? j.apify : j.verify;
+    $('run-title').textContent = j.phase === 'apify' ? 'Scraping LinkedIn + Indeed…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Finishing…';
+    $('live-done').textContent = (cur.done || 0).toLocaleString();
+    $('live-total').textContent = (cur.total || 0).toLocaleString();
+    $('live-bar').style.width = (cur.total ? Math.round((cur.done / cur.total) * 100) : 0) + '%';
+    $('run-note').hidden = !j.spends; // the "Live" tag only when the run actually spends
+    $('live-spend').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
     if (j.status === 'done') {
       const shown = (j.rows || []).length;
       const scanned = (j.verify && j.verify.total) || shown;
+      $('runview').classList.add('done');
+      $('live-bar').style.width = '100%';
+      $('run-title').textContent = `Verified ${scanned.toLocaleString()} · ${shown.toLocaleString()} matched`;
       toast(`Scanned <b>${scanned.toLocaleString()}</b> · <b>${shown.toLocaleString()}</b> matched`);
       setStatus('');
       setRunButtons(false);
-      reloadScry(); // real (admin) scans persist to the aggregate, so Scry now shows them
+      // Let the green "done" strip land, then swap in the fresh rows (which hides the strip).
+      clearTimeout(pollTimer);
+      pollTimer = setTimeout(() => reloadScry(), 1100);
       return;
     }
     if (j.status === 'error') { setStatus(j.error || 'run failed', true); showRun(false); showScry(); setRunButtons(false); return; }

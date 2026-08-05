@@ -23,14 +23,14 @@
 
 <main class="jb-body">
   <div class="status" id="status"></div>
-  <section class="runview" id="runview" hidden>
-    <div class="run-head"><h2 id="run-title">Running search…</h2><span class="run-target" id="run-target"></span><span class="run-note" id="run-note">mock · $0</span></div>
-    <div class="bars">
-      <div class="barrow"><span class="barlabel">Scrape</span><div class="bar"><i class="bar-fill" id="bar-apify"></i></div><span class="barnum" id="num-apify">0 / 0</span></div>
-      <div class="barrow"><span class="barlabel">Verify</span><div class="bar"><i class="bar-fill" id="bar-verify"></i></div><span class="barnum" id="num-verify">0 / 0</span></div>
-      <div class="barrow"><span class="barlabel">Budget</span><div class="bar"><i class="bar-fill rate" id="bar-rate"></i></div><span class="barnum" id="num-rate">$0.00 / $5.00</span></div>
-    </div>
-  </section>
+  <div class="jb-live" id="runview" hidden aria-live="polite">
+    <span class="live-pulse" aria-hidden="true"></span>
+    <span class="live-phase" id="run-title">Starting…</span>
+    <span class="live-count"><b class="mono" id="live-done">0</b> / <span class="mono" id="live-total">0</span></span>
+    <span class="live-track"><i id="live-bar"></i></span>
+    <span class="live-mode" id="run-note" hidden>Live</span>
+    <span class="live-spend mono" id="live-spend">$0.00 / $5.00</span>
+  </div>
   <div id="scry-root"></div>
   <div id="conjure-root" hidden></div>
 </main>
