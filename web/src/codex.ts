@@ -29,6 +29,8 @@ const LS_PARAMS = 'jobomancer:codex:params';
 // Starter ids the user has trashed. Client-side only — starters ship in code, not in a store,
 // so "trashing" one just hides it in this browser.
 const LS_DISMISSED = 'jobomancer:codex:dismissed';
+// Template ids pinned to the top of the library (client-side, this browser).
+const LS_PINNED = 'jobomancer:codex:pinned';
 // Reserved category: your PERSONAL info (name, phone, email, LinkedIn, GitHub, …), kept
 // separate from company/application templates. Rendered as a compact field strip, and its
 // values feed the {{TOKENS}} in templates (a "LinkedIn" field fills {{LINKEDIN}}). 'Quick Info'
@@ -100,6 +102,7 @@ const prettyToken = (t: string) => t.replace(/_/g, ' ').toLowerCase().replace(/^
 
 const loadLocalTemplates = (): Template[] => { try { return JSON.parse(localStorage.getItem(LS_TPL) || '[]'); } catch { return []; } };
 const loadDismissed = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_DISMISSED) || '[]') as string[]); } catch { return new Set(); } };
+const loadPinned = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_PINNED) || '[]') as string[]); } catch { return new Set(); } };
 
 // When a guest signs in, upload any templates they made in localStorage to their account, so
 // guest work follows them. Clears localStorage only if EVERY template uploaded (a partial
@@ -134,7 +137,11 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   let editing: Template | 'new' | null = null;
   let filterCat: string | null = null;
   const dismissed = loadDismissed(); // starter ids trashed from the library (this browser)
+  const pinned = loadPinned(); // template ids pinned to the top (this browser)
   const liveStarters = (): Template[] => STARTERS.filter((s) => !dismissed.has(s.id));
+  // Bring the editor into view when it opens — it renders near the top of the room, so on a long
+  // library a click far down would otherwise open it off-screen and look like nothing happened.
+  const scrollToEditor = (): void => { root.querySelector('.cx-editor')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
   let qForm: Template | 'new' | null = null; // inline Quick Info add/edit form
 
   function loadParams(): Record<string, string> {
@@ -235,7 +242,10 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
 
   function templateCard(t: Template): string {
     const toks = tokensIn(t.body);
-    const preview = esc(t.body.length > 320 ? t.body.slice(0, 320) + '…' : t.body);
+    // Show the FULL body (a scrollable pre, styled in codex.css) rather than a 320-char '…' preview —
+    // a truncated cover letter is ambiguous (is it cut off, or just not rendered?). Copy uses the full
+    // body regardless; this just makes the whole thing visible in the card.
+    const preview = esc(t.body);
     const tags = t.tags
       ? t.tags
           .split(',')
@@ -244,6 +254,11 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
           .map((x) => `<span class="cx-tag">${esc(x)}</span>`)
           .join('')
       : '';
+    const isPinned = pinned.has(t.id);
+    // Pinning is for YOUR templates (starters are read-only examples): pinned cards sort to the top.
+    const pin = t.starter
+      ? ''
+      : `<button class="cx-pin${isPinned ? ' on' : ''}" data-pin="${esc(t.id)}" title="${isPinned ? 'Unpin' : 'Pin to top'}" aria-label="${isPinned ? 'Unpin' : 'Pin to top'}">📌</button>`;
     const actions = t.starter
       ? `<button class="cx-btn" data-dup="${esc(t.id)}">Edit</button>
          <button class="cx-btn danger" data-dismiss="${esc(t.id)}">Trash</button>
@@ -251,10 +266,11 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
       : `<button class="cx-btn" data-edit="${esc(t.id)}">Edit</button>
          <button class="cx-btn danger" data-del="${esc(t.id)}">Delete</button>
          <button class="cx-btn primary" data-copy="${esc(t.id)}">Copy</button>`;
-    return `<article class="cx-card${t.starter ? ' starter' : ''}">
+    return `<article class="cx-card${t.starter ? ' starter' : ''}${isPinned ? ' pinned' : ''}">
       <div class="cx-card-h">
         <div><div class="cx-title">${esc(t.title || 'Untitled')}</div>
           <div class="cx-meta"><span class="cx-cat">${esc(t.category || 'Uncategorized')}</span>${t.starter ? '<span class="cx-badge">starter</span>' : ''}${tags}</div></div>
+        ${pin}
       </div>
       <pre class="cx-body">${preview}</pre>
       ${toks.length ? `<div class="cx-tokens">${toks.map((x) => `<code>{{${esc(x)}}}</code>`).join('')}</div>` : ''}
@@ -326,7 +342,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
 
   function render(): void {
     const shown = shownTemplates();
-    const mine = shown.filter((t) => !t.starter);
+    // Pinned templates sort to the top (stable, so newest-first order holds within each group).
+    const mine = shown.filter((t) => !t.starter).sort((a, b) => (pinned.has(b.id) ? 1 : 0) - (pinned.has(a.id) ? 1 : 0));
     const starters = shown.filter((t) => t.starter);
     const signedOut = !deps.isSignedIn();
     const grid = (list: Template[]) => list.map(templateCard).join('');
@@ -372,6 +389,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
         if (t) {
           editing = { ...t };
           render();
+          scrollToEditor();
         }
       }),
     );
@@ -381,6 +399,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
         if (t) {
           editing = { id: '', title: t.title.replace(' — skeleton', ''), category: t.category, body: t.body, tags: t.tags };
           render();
+          scrollToEditor();
         }
       }),
     );
@@ -405,10 +424,22 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
         render();
       }),
     );
+    // Pin / unpin: toggle membership, persist, re-render (pinned cards sort to the top).
+    root.querySelectorAll<HTMLElement>('[data-pin]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const id = b.dataset.pin!;
+        if (pinned.has(id)) pinned.delete(id);
+        else pinned.add(id);
+        try { localStorage.setItem(LS_PINNED, JSON.stringify([...pinned])); } catch { /* private mode */ }
+        toast(pinned.has(id) ? '📌 Pinned to top' : 'Unpinned');
+        render();
+      }),
+    );
     // toolbar / editor
     root.querySelector('#cx-new')?.addEventListener('click', () => {
       editing = 'new';
       render();
+      scrollToEditor();
     });
     root.querySelector('#cx-cancel')?.addEventListener('click', () => {
       editing = null;
