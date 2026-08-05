@@ -8,7 +8,7 @@
 // (authFetch/api) rather than imported, so this module type-checks without the untyped
 // @platform/ui surface.
 import './conjure.css';
-import { fetchTemplates, fill, isPersonal, personalTokens, STARTERS, type Template } from './codex';
+import { fetchTemplates, fill, isPersonal, loadPinned, personalTokens, STARTERS, type Template } from './codex';
 
 // The api/applicator row (mirror of cmd/gui applyRow). A job is Discerned when it
 // carries a summary; Consecrated (saved, not yet summarized) when the summary is blank.
@@ -145,12 +145,15 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     // letters yet, so the picker is never empty. (Filtering on the current isPersonal() rather than
     // the old 'Quick Info' string was the regression: Personal Info leaked in as the only options.)
     const own = tpls.filter((t) => !isPersonal(t));
-    const pool = own.length ? own : STARTERS;
+    // Pinned letters (from the Codex library) sort to the top and get a slight gold tint, so the ones
+    // you reach for most are first here too. slice() so the shared STARTERS array is never mutated.
+    const pins = loadPinned();
+    const pool = (own.length ? own : STARTERS).slice().sort((a, b) => (pins.has(b.id) ? 1 : 0) - (pins.has(a.id) ? 1 : 0));
     const pop = document.createElement('div');
     pop.className = 'letter-pop';
     pop.innerHTML = `<div class="lp-head">Copy for <b>${esc(j.c)}</b><span class="lp-sub">{{COMPANY}} · {{POSITION}} filled in</span></div>${
       pool.length
-        ? `<div class="lp-list">${pool.map((t, i) => `<button class="lp-item" data-i="${i}"><span class="lp-t">${esc(t.title)}</span><span class="lp-cat">${esc(t.category || '')}</span></button>`).join('')}</div>`
+        ? `<div class="lp-list">${pool.map((t, i) => `<button class="lp-item${pins.has(t.id) ? ' pinned' : ''}" data-i="${i}"><span class="lp-t">${pins.has(t.id) ? '📌 ' : ''}${esc(t.title)}</span><span class="lp-cat">${esc(t.category || '')}</span></button>`).join('')}</div>`
         : `<div class="lp-empty">No templates yet — add cover letters in the <b>📖 Codex</b>.</div>`
     }`;
     document.body.appendChild(pop);
@@ -216,7 +219,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       <div class="chead"><div><div class="ctitle">${esc(j.t)}</div><div class="cmeta">${esc(j.c)} · ${esc(j.lp)}${j.r ? ' · Remote' : ''}</div></div>${payBadge(j)}</div>
       ${isDiscerned(j) ? `<div class="clines"><div class="ln req"><span class="k">Required</span><span class="v">${esc(j.required || '--')}</span></div><div class="ln pref"><span class="k">Preferred</span><span class="v">${esc(j.preferred || '--')}</span></div></div>` : ''}
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
-        <div class="cact"><span class="doneflag">✓ Manifested</span><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a><button class="linkbtn unmani">Un-manifest</button></div></div>
+        <div class="cact"><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a><button class="linkbtn unmani">Un-manifest</button></div></div>
     </article>`;
   }
 

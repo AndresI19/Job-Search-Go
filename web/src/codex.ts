@@ -102,7 +102,8 @@ const prettyToken = (t: string) => t.replace(/_/g, ' ').toLowerCase().replace(/^
 
 const loadLocalTemplates = (): Template[] => { try { return JSON.parse(localStorage.getItem(LS_TPL) || '[]'); } catch { return []; } };
 const loadDismissed = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_DISMISSED) || '[]') as string[]); } catch { return new Set(); } };
-const loadPinned = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_PINNED) || '[]') as string[]); } catch { return new Set(); } };
+// Exported so Conjure's cover-letter picker can order pinned letters to the top too.
+export const loadPinned = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_PINNED) || '[]') as string[]); } catch { return new Set(); } };
 
 // When a guest signs in, upload any templates they made in localStorage to their account, so
 // guest work follows them. Clears localStorage only if EVERY template uploaded (a partial
