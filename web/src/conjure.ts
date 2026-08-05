@@ -65,6 +65,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let trashed: ApplyJob[] = []; // saved, dismissed / no longer available
   let sub: 'consecrated' | 'discerned' | 'manifested' | 'trashed' = 'discerned';
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
+  // Discern progress: while active, render() shows a dedicated loading screen (Claude reads
+  // each posting) instead of the card board, with a live done/total track.
+  const discerning = { active: false, done: 0, total: 0 };
 
   // Custom drag ghost. The native HTML5 ghost is a frozen snapshot we can't recolour
   // mid-drag, and it floats OVER the Trash tab — so a red tab is hidden beneath it.
@@ -140,7 +143,24 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     </article>`;
   }
 
+  // The Discern loading screen — Conjure's own scan indicator (teal/wand-themed, distinct
+  // from Scry's navy strip). Reads each posting with Claude; the track follows done/total.
+  function discernLoading(): string {
+    const { done, total } = discerning;
+    const pct = total ? Math.round((done / total) * 100) : 0;
+    return `<div class="cload">
+      <div class="cload-panel">
+        <div class="cload-orb"><span class="cload-pulse"></span>✨</div>
+        <div class="cload-title">Discerning your shortlist…</div>
+        <div class="cload-sub">Reading each posting with Claude — required vs preferred, what the role &amp; company do, and honest pay.</div>
+        <div class="cload-track"><i style="width:${pct}%"></i></div>
+        <div class="cload-count"><b>${done}</b> / ${total} read</div>
+      </div>
+    </div>`;
+  }
+
   function render(): void {
+    if (discerning.active) { root.innerHTML = discernLoading(); return; }
     const consecrated = jobs.filter((j) => !isDiscerned(j));
     const discerned = jobs.filter(isDiscerned);
     const shown = sub === 'discerned' ? discerned : sub === 'consecrated' ? consecrated : sub === 'trashed' ? trashed : manifested;
@@ -321,7 +341,11 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   function discern(btn: HTMLButtonElement, urls: string[]): void {
     if (!urls.length) return;
     btn.disabled = true;
-    btn.textContent = '✨ Discerning…';
+    // Take over the room with the Discern loading screen while Claude reads the selection.
+    discerning.active = true;
+    discerning.done = 0;
+    discerning.total = urls.length;
+    render();
     deps
       .authFetch(deps.api('applicator/launch'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ urls }) })
       .then((res) => {
@@ -331,6 +355,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       })
       .then(({ id }) => poll(id))
       .catch((e: Error) => {
+        discerning.active = false;
         toast(e.message || 'Discern failed');
         render();
       });
@@ -340,18 +365,25 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       .then((r) => r.json() as Promise<{ status: string; done: number; total: number }>)
       .then((j) => {
         if (j.status === 'done') {
+          discerning.active = false;
           toast(`🔮 Discerned ${j.total} job${j.total === 1 ? '' : 's'}`);
           selected.clear();
           sub = 'discerned';
-          load();
+          load(); // re-fetches and renders the Discerned board
         } else if (j.status === 'error') {
+          discerning.active = false;
           toast('Discern failed');
           render();
         } else {
+          // Advance the loading-screen track, then keep polling.
+          discerning.done = j.done || 0;
+          if (j.total) discerning.total = j.total;
+          render();
           setTimeout(() => poll(id), 500);
         }
       })
       .catch(() => {
+        discerning.active = false;
         toast('Discern status lost');
         render();
       });

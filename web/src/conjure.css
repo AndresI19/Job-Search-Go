@@ -86,5 +86,20 @@
 .cact { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
 .doneflag { font-size: 11px; color: #2f9e44; font-weight: 800; display: inline-flex; gap: 5px; align-items: center; }
 
+/* Discern loading screen — Conjure's own scan indicator. Teal/wand-themed (#0f9d8f, the
+   Conjure accent) so it reads as distinct from Scry's navy live strip. */
+.cload { display: flex; align-items: center; justify-content: center; min-height: 46vh; padding: 30px 12px; }
+.cload-panel { max-width: 460px; width: 100%; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); padding: 32px 28px; }
+.cload-orb { width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 27px; background: color-mix(in srgb, #0f9d8f 13%, var(--panel)); position: relative; }
+.cload-pulse { position: absolute; inset: 0; border-radius: 999px; border: 2px solid #0f9d8f; animation: cloadpulse 1.3s ease-out infinite; }
+@keyframes cloadpulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.55); opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .cload-pulse { animation: none; opacity: .35; } }
+.cload-title { font-weight: 820; font-size: 17px; color: var(--ink); letter-spacing: -.01em; }
+.cload-sub { font-size: 12.5px; color: var(--muted); margin: 8px auto 18px; max-width: 42ch; line-height: 1.5; }
+.cload-track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
+.cload-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #0f9d8f, var(--accent2)); transition: width .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.cload-count { margin-top: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.cload-count b { color: var(--ink); font-weight: 800; }
+
 .conjure-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); opacity: 0; pointer-events: none; transition: .25s; z-index: 60; }
 .conjure-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
