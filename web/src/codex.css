@@ -62,7 +62,7 @@
 .cx-ed-actions { display: flex; justify-content: flex-end; gap: 10px; }
 
 /* Cards */
-.cx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.cx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
 .cx-card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 15px 16px; display: flex; flex-direction: column; gap: 11px; }
 .cx-card.starter { border-style: dashed; background: var(--panel-2); }
 .cx-card-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
