@@ -6,7 +6,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AndresI19/Job-Search-Go/internal/db"
 	"github.com/AndresI19/Job-Search-Go/internal/model"
 	"github.com/AndresI19/Job-Search-Go/internal/profile"
 	"github.com/AndresI19/Job-Search-Go/internal/report"
@@ -100,24 +99,14 @@ func (s *server) results(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"results": demo, "total": len(demo)})
 		return
 	}
-	all, err := s.db.Listings(r.Context(), userID, db.Aggregate)
+	rows, err := s.db.ListingsWithNew(r.Context(), userID)
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
-	fresh, err := s.db.Listings(r.Context(), userID, db.New)
-	if err != nil {
-		httpErr(w, err)
-		return
-	}
-	newURLs := make(map[string]struct{}, len(fresh))
-	for _, f := range fresh {
-		newURLs[f.Listing.URL] = struct{}{}
-	}
-	out := make([]resultDTO, len(all))
-	for i, res := range all {
-		_, isNew := newURLs[res.Listing.URL]
-		out[i] = toResultDTO(res, isNew)
+	out := make([]resultDTO, len(rows))
+	for i, rn := range rows {
+		out[i] = toResultDTO(rn.Result, rn.New)
 	}
 	writeJSON(w, map[string]any{"results": out, "total": len(out)})
 }

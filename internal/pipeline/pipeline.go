@@ -1,6 +1,6 @@
 // Package pipeline runs the verification chain over ingested listings. For each
 // listing it resolves the company's ATS board, judges the listing against those
-// requisitions with Claude, and blends the two into a scored Result. The chain
+// requisitions with an LLM judge, and blends the two into a scored Result. The chain
 // is sequential per listing — ATS first, since its requisitions are the judge's
 // candidate set — and the pipeline fans it out across listings with a bounded
 // worker pool, the program's hardest-worked concurrency.
@@ -18,7 +18,7 @@ import (
 	"github.com/AndresI19/Job-Search-Go/internal/score"
 )
 
-// Verify runs every listing through ATS → Claude → combine and returns the
+// Verify runs every listing through ATS → judge → combine and returns the
 // scored Results sorted best-first (highest legitimacy score). workers bounds how
 // many listings are in flight at once; a value below 1 is treated as 1. onResult,
 // if non-nil, is called once per listing as it finishes, with that listing's
@@ -72,9 +72,9 @@ func verifyOne(ctx context.Context, l model.Listing, resolver *ats.Resolver, jd 
 		log.Debug("no ats board found", "company", l.Company)
 	}
 
-	// 2 · Claude: judge the listing against the ATS candidates. ATSChecked lets the
+	// 2 · Judge: judge the listing against the ATS candidates. ATSChecked lets the
 	// prompt distinguish "checked, no match" (ghost signal) from "board not found"
-	// (a coverage gap, not evidence). A judge error is degraded to no Claude
+	// (a coverage gap, not evidence). A judge error is degraded to no judge
 	// coverage rather than failing the whole listing.
 	var verdict *model.Verdict
 	if v, err := jd.Evaluate(ctx, judge.Input{Listing: l, Candidates: candidates, ATSChecked: atsChecked}); err == nil {

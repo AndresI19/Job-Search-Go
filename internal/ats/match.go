@@ -15,7 +15,7 @@ import (
 // matchThreshold is the minimum title similarity for Match to call a scraped
 // listing and a board requisition the same role. It is deliberately lenient:
 // this is a cheap pre-filter, and genuinely ambiguous pairs are meant to fall
-// through to the Claude judge with the full candidate set.
+// through to the judge with the full candidate set.
 const matchThreshold = 0.6
 
 var nonAlnum = regexp.MustCompile(`[^a-z0-9]+`)
