@@ -13,7 +13,7 @@ import './app.css';
 import { iconWheel, bgWheel } from './wheels';
 import { mountScry, scryStreamStart, scryStreamRows } from './scry';
 import { mountConjure } from './conjure';
-import { mountCodex } from './codex';
+import { mountCodex, migrateGuestTemplates } from './codex';
 import { mountAccountFab, mountGate } from '@platform/ui/gate';
 import { authFetch, isAdmin, isSignedIn, onIdentity } from '@platform/ui/auth';
 
@@ -301,7 +301,13 @@ mountAccountFab({
 // Disclose demo limits to non-admins: the search popover carries the "one scan per week,
 // sample results" note so a visitor knows the deal before launching a scan.
 function updateDemoUI() { const el = $('sp-demo'); if (el) el.hidden = role === 'admin'; }
-onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; updateDemoUI(); refreshTabCounts(); });
+onIdentity(() => {
+  role = isAdmin() ? 'admin' : 'guest';
+  updateDemoUI();
+  refreshTabCounts();
+  // On sign-in, carry any guest-made Codex templates up to the account.
+  if (isSignedIn()) migrateGuestTemplates({ api, authFetch, isSignedIn }).then((n) => { if (n) toast(`✨ Synced ${n} template${n === 1 ? '' : 's'} to your account`); });
+});
 
 // ---- boot: load the field/location catalogs, then show Scry ----
 fetch(api('config')).then((r) => r.json()).then((c) => {

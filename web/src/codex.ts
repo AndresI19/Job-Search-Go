@@ -80,6 +80,24 @@ export function fill(body: string, params: Record<string, string>): string {
 const prettyToken = (t: string) => t.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 const loadLocalTemplates = (): Template[] => { try { return JSON.parse(localStorage.getItem(LS_TPL) || '[]'); } catch { return []; } };
+
+// When a guest signs in, upload any templates they made in localStorage to their account, so
+// guest work follows them. Clears localStorage only if EVERY template uploaded (a partial
+// failure retries next sign-in). Returns how many synced. No-op for guests / an empty store.
+export async function migrateGuestTemplates(deps: CodexDeps): Promise<number> {
+  if (!deps.isSignedIn()) return 0;
+  const local = loadLocalTemplates();
+  if (!local.length) return 0;
+  let ok = 0;
+  for (const t of local) {
+    try {
+      const res = await deps.authFetch(deps.api('codex'), { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(t) });
+      if (res && res.ok) ok++;
+    } catch { /* leave it in localStorage to retry */ }
+  }
+  if (ok === local.length) { try { localStorage.removeItem(LS_TPL); } catch { /* private mode */ } }
+  return ok;
+}
 // Shared loader: a user's templates (server when signed in, localStorage for guests). Used by
 // the Codex room AND by Conjure's "cover letter" auto-fill, so both read the same store.
 export async function fetchTemplates(deps: CodexDeps): Promise<Template[]> {
