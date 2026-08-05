@@ -2,43 +2,58 @@
    --panel-2, --ink, --muted, --line) loaded by @platform/ui; defines only the pay /
    recency data-encoding tints, which are fixed data colours, not brand accents. */
 :root {
-  /* Data tints — desaturated ("dusty") so they read as encoding, not bright candy pastels,
-     while staying light enough for the dark cell ink. Hue still signals fresh/aging/est. */
-  --pay-light: #d7ddd0;
-  --pay-strong: #b7c7a7;
-  --fresh: #bcd0ae;
-  --recent: #e6dcbb;
-  --aging: #e2cba3;
-  --stale: #ddc2be;
-  --est-light: #d5dce6; /* estimated pay — distinct dusty blues, never the posted green */
-  --est-strong: #bfccdc;
+  /* Data tints — muted mid-tones (not bright pastels), still light enough for the dark cell
+     ink. Hue still signals fresh/aging/est / pay presence. */
+  --pay-light: #b0bda6;
+  --pay-strong: #91b184;
+  --fresh: #9bbd8b;
+  --recent: #cdbd82;
+  --aging: #cca46f;
+  --stale: #c79f9a;
+  --est-light: #adbccf; /* estimated pay — distinct muted blues, never the posted green */
+  --est-strong: #95abca;
 }
 
+/* Toolbar above the grid: a visible panel, edge-aligned with the table (same 92vw / centred),
+   with three zones — status (left), search (grows), actions (right). */
 .scry-ctx {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
   flex-wrap: wrap;
   font-size: 12.5px;
   color: var(--muted);
-  margin: 2px 2px 10px;
+  width: 92vw;
+  max-width: 1760px;
+  margin-left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 12px;
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  padding: 11px 15px;
+  box-shadow: var(--shadow, 0 1px 3px rgba(20, 22, 40, .09));
 }
 .scry-ctx b { color: var(--ink); }
-.scry-ctx.err { color: #d0433b; }
+.scry-ctx.err { color: #d0433b; display: block; }
+.ctx-status { display: inline-flex; align-items: baseline; gap: 10px; white-space: nowrap; }
+.ctx-status b { font-family: var(--serif, inherit); font-size: 19px; font-weight: 600; }
+.ctx-actions { margin-left: auto; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .scry-ctx .newpill {
-  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  background: color-mix(in srgb, var(--accent) 16%, transparent);
   color: var(--accent);
   font-weight: 700;
   border-radius: 999px;
   padding: 2px 9px;
+  font-size: 11.5px;
 }
 .scry-ctx .clearf {
   border: 1px solid var(--line);
-  background: var(--panel);
+  background: var(--panel-2);
   color: var(--muted);
   border-radius: 8px;
-  padding: 3px 10px;
-  font: 700 11.5px/1 inherit;
+  padding: 7px 12px;
+  font: 700 12px/1 inherit;
   cursor: pointer;
 }
 .scry-ctx .clearf:hover { color: var(--accent); border-color: var(--accent); }
@@ -128,7 +143,7 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry-run { padding: 8px 15px; font-size: 13px; border-radius: 9px; }
 .scry-ctx .scry-run + .scry-run { margin-left: 2px; }
 /* Global free-text search — filters the grid by title / company / location. */
-.scry-search { flex: 1 1 220px; max-width: 340px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 11px; font: 500 12.5px/1.2 inherit; }
+.scry-search { flex: 1 1 240px; max-width: 460px; border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 9px; padding: 8px 12px; font: 500 13px/1.2 inherit; }
 .scry-search::placeholder { color: var(--muted); }
 .scry-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .scry-tip { position: fixed; z-index: 60; display: none; max-width: 340px; background: var(--ink); color: var(--panel); padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.4; box-shadow: var(--shadow-lg, 0 14px 44px rgba(20,22,40,.17)); pointer-events: none; white-space: nowrap; }
@@ -137,7 +152,7 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .filt-badge { background: var(--accent); color: var(--accent-ink, #fff); border-radius: 999px; padding: 1px 7px; font: 700 10px/1 ui-monospace, monospace; }
 .filt-menu label { text-transform: none; letter-spacing: 0; }
 .filt-menu input[type=radio] { width: 14px; height: 14px; accent-color: var(--accent); }
-.scry-pager { display: flex; align-items: center; gap: 12px; margin: 12px 2px 0; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.scry-pager { display: flex; align-items: center; gap: 12px; width: 92vw; max-width: 1760px; margin-left: 50%; transform: translateX(-50%); margin-top: 12px; font-size: 12.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .scry-pager button { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 5px 12px; font: 700 12.5px/1 inherit; cursor: pointer; }
 .scry-pager button:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
 .scry-pager button:disabled { opacity: .45; cursor: default; }
@@ -189,6 +204,7 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 /* Phone: the search box takes its own full-width row; the grid uses more of the viewport. */
 @media (max-width: 680px) {
   .scry-search { max-width: none; flex-basis: 100%; order: 5; }
-  .scry-wrap { width: 96vw; }
-  .scry-ctx { margin: 2px 2px 8px; gap: 8px; }
+  .scry-wrap, .scry-ctx, .scry-pager { width: 96vw; }
+  .scry-ctx { gap: 8px; padding: 10px 12px; }
+  .ctx-actions { margin-left: 0; width: 100%; }
 }

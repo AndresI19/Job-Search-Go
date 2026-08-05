@@ -187,7 +187,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       <div class="chead-row">
         <div class="csubs">
           <button data-sub="consecrated" class="${sub === 'consecrated' ? 'on' : ''}">★ Consecrated <span class="c">${consecrated.length}</span></button>
-          <button data-sub="discerned" class="${sub === 'discerned' ? 'on' : ''}">Discerned <span class="c">${discerned.length}</span></button>
+          <button data-sub="discerned" class="${sub === 'discerned' ? 'on' : ''}">👁 Discerned <span class="c">${discerned.length}</span></button>
           <button data-sub="manifested" class="${sub === 'manifested' ? 'on' : ''}">✓ Manifested <span class="c">${manifested.length}</span></button>
           <button data-sub="trashed" class="${sub === 'trashed' ? 'on' : ''}">🗑 Trash <span class="c">${trashed.length}</span></button>
         </div>
