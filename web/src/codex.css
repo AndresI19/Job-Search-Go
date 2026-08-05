@@ -21,6 +21,7 @@
 .cx-qi-copy { display: inline-flex; align-items: baseline; gap: 8px; border: 0; background: transparent; color: var(--ink); cursor: pointer; padding: 6px 11px; font: inherit; }
 .cx-qi-copy:hover { background: color-mix(in srgb, var(--cx) 11%, transparent); }
 .cx-qi-k { font-weight: 800; font-size: 12.5px; }
+.cx-qi-tok { font: 600 10px/1 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--cx); opacity: .65; margin-left: 6px; }
 .cx-qi-v { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; color: var(--muted); max-width: 240px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cx-qi-mini { border: 0; border-left: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; padding: 0 9px; font-size: 12px; }
 .cx-qi-mini:hover { color: var(--cx); background: var(--panel-2); }

@@ -26,9 +26,23 @@ export interface CodexDeps {
 
 const LS_TPL = 'jobomancer:codex:templates';
 const LS_PARAMS = 'jobomancer:codex:params';
-// Reserved category: short, fixed snippets (links, phone, email) shown as compact
-// one-click copy chips at the top — no tokens, no big card.
+// Reserved category: your PERSONAL info (name, phone, email, LinkedIn, GitHub, …), kept
+// separate from company/application templates. Rendered as a compact field strip, and its
+// values feed the {{TOKENS}} in templates (a "LinkedIn" field fills {{LINKEDIN}}). 'Quick Info'
+// is the legacy name for the same category, still recognised so older entries aren't orphaned.
+const PERSONAL = 'Personal Info';
 const QUICK = 'Quick Info';
+const isPersonal = (t: Template): boolean => t.category === PERSONAL || t.category === QUICK;
+// The {{TOKEN}} a personal field fills: its label upper-cased ("Full Name" → FULL_NAME).
+export const fieldToken = (label: string): string => label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
+// Build a token→value map from a user's personal fields, for filling templates elsewhere (Conjure).
+export function personalTokens(templates: Template[]): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const t of templates) if (isPersonal(t)) { const k = fieldToken(t.title); if (k) out[k] = t.body; }
+  return out;
+}
+// Suggested personal fields offered when adding one.
+const FIELD_SUGGESTIONS = ['Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Website', 'Location'];
 
 const esc = (s: unknown) =>
   (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -45,7 +59,7 @@ export const STARTERS: Template[] = [
     body:
       'Dear {{COMPANY}} Hiring Team,\n\n' +
       "I'm applying for the {{POSITION}} role. In my work I've {{ONE_LINE_ACHIEVEMENT}}, and I'm drawn to {{COMPANY}} because {{WHY_COMPANY}}.\n\n" +
-      "I'd welcome the chance to talk about how I can contribute.\n\nBest regards,\n{{YOUR_NAME}}",
+      "I'd welcome the chance to talk about how I can contribute.\n\nBest regards,\n{{NAME}}",
   },
   {
     id: 'starter:why',
@@ -63,7 +77,7 @@ export const STARTERS: Template[] = [
     title: 'Follow-up email',
     body:
       'Hi {{HIRING_MANAGER}},\n\n' +
-      "Thanks for taking the time to discuss the {{POSITION}} role. Our conversation about {{TOPIC}} reinforced my interest in {{COMPANY}}. Happy to share anything else that's useful.\n\nBest,\n{{YOUR_NAME}}",
+      "Thanks for taking the time to discuss the {{POSITION}} role. Our conversation about {{TOPIC}} reinforced my interest in {{COMPANY}}. Happy to share anything else that's useful.\n\nBest,\n{{NAME}}",
   },
 ];
 
@@ -147,6 +161,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   async function load(): Promise<void> {
     root.innerHTML = `<p class="croomnote">Loading your Codex…</p>`;
     templates = await fetchTemplates(deps);
+    // Seed the token param values from Personal Info, so {{NAME}}/{{LINKEDIN}}/… are pre-filled.
+    for (const [k, v] of Object.entries(personalTokens(templates))) if (!params[k]) params[k] = v;
     render();
   }
 
@@ -183,9 +199,9 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   // ---- rendering ----------------------------------------------------------------
   // Quick Info items render in their own compact strip, so they're kept out of the
   // token param bar, the category chips, and the main card grid.
-  const quickItems = (): Template[] => templates.filter((t) => t.category === QUICK);
+  const quickItems = (): Template[] => templates.filter(isPersonal);
   function shownTemplates(): Template[] {
-    const all = [...templates, ...STARTERS].filter((t) => t.category !== QUICK);
+    const all = [...templates, ...STARTERS].filter((t) => !isPersonal(t));
     return filterCat ? all.filter((t) => (t.category || 'Uncategorized') === filterCat) : all;
   }
 
@@ -203,7 +219,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
 
   function categoryChips(): string {
-    const cats = Array.from(new Set([...templates, ...STARTERS].filter((t) => t.category !== QUICK).map((t) => t.category || 'Uncategorized')));
+    const cats = Array.from(new Set([...templates, ...STARTERS].filter((t) => !isPersonal(t)).map((t) => t.category || 'Uncategorized')));
     const chip = (label: string, key: string | null) =>
       `<button class="cx-chip${filterCat === key ? ' on' : ''}" data-cat="${key === null ? '' : esc(key)}">${esc(label)}</button>`;
     return `<div class="cx-chips">${chip('All', null)}${cats.map((c) => chip(c, c)).join('')}</div>`;
@@ -257,12 +273,14 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     </div>`;
   }
 
-  // Quick Info — a compact strip of one-click copy chips (label + value), plus a light
-  // inline add/edit form. No tokens, no card; just fixed snippets you copy verbatim.
+  // Personal Info — your name / contact fields (label + value), kept separate from templates.
+  // Their values fill the matching {{TOKEN}} in cover letters (here and in Conjure). A light
+  // inline add/edit form with suggested field names; the label datalist offers the common ones.
   function quickForm(): string {
     const t = qForm === 'new' || qForm === null ? { title: '', body: '' } : qForm;
     return `<div class="cx-qform">
-      <input id="cx-qlabel" value="${esc(t.title)}" placeholder="Label — e.g. LinkedIn" autocomplete="off">
+      <input id="cx-qlabel" value="${esc(t.title)}" placeholder="Field — e.g. LinkedIn" list="cx-fields" autocomplete="off">
+      <datalist id="cx-fields">${FIELD_SUGGESTIONS.map((f) => `<option value="${esc(f)}">`).join('')}</datalist>
       <input id="cx-qvalue" value="${esc(t.body)}" placeholder="Value — e.g. linkedin.com/in/you" autocomplete="off">
       <button class="cx-btn primary" id="cx-qsave">Save</button>
       <button class="cx-btn" id="cx-qcancel">Cancel</button>
@@ -277,6 +295,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
           <button class="cx-qi-copy" data-copyqi="${esc(t.id)}" title="Copy ${esc(t.title)}">
             <span class="cx-qi-k">${esc(t.title || 'Untitled')}</span>
             <span class="cx-qi-v">${esc(v.length > 60 ? v.slice(0, 60) + '…' : v)}</span>
+            <span class="cx-qi-tok">{{${esc(fieldToken(t.title))}}}</span>
           </button>
           <button class="cx-qi-mini" data-qedit="${esc(t.id)}" title="Edit" aria-label="Edit">✎</button>
           <button class="cx-qi-mini" data-qdel="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>
@@ -284,8 +303,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
       })
       .join('');
     return `<div class="cx-quick">
-      <div class="cx-quick-h"><span>⚡ Quick Info</span><button class="cx-btn cx-qadd" id="cx-qadd">+ Add</button></div>
-      ${items.length ? `<div class="cx-quick-list">${rows}</div>` : qForm ? '' : `<p class="cx-qempty">Short, fixed snippets for one-click copy — your site, LinkedIn, phone, email.</p>`}
+      <div class="cx-quick-h"><span>👤 Personal Info</span><button class="cx-btn cx-qadd" id="cx-qadd">+ Add field</button></div>
+      ${items.length ? `<div class="cx-quick-list">${rows}</div>` : qForm ? '' : `<p class="cx-qempty">Your name &amp; contact details — LinkedIn, GitHub, phone, email. Each fills the matching <code>{{TOKEN}}</code> in your cover letters (a <b>LinkedIn</b> field fills <code>{{LINKEDIN}}</code>), here and when applying from Conjure.</p>`}
       ${qForm ? quickForm() : ''}
     </div>`;
   }
@@ -421,7 +440,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     const t: Template = {
       id: existingId || 'tpl-' + (crypto.randomUUID?.() || String(Date.now())),
       title: label,
-      category: QUICK,
+      category: PERSONAL,
       body: value,
       tags: '',
     };
