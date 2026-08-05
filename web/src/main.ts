@@ -34,20 +34,41 @@ function setMode(m) {
   for (const b of document.querySelectorAll('#jb-modes button')) b.classList.toggle('on', b.dataset.mode === m);
   $('search-pop').hidden = true;
   if (m === 'scry') showScry(); else if (m === 'conjure') showConjure(); else showCodex();
+  refreshTabCounts();
+}
+
+// Cross-room funnel feedback: the Conjure tab wears a badge with the shortlist size
+// (consecrated + discerned = saved, not applied, still available), so pipeline state is
+// visible from anywhere. It pulses when the count grows — e.g. right after you Consecrate.
+async function refreshTabCounts() {
+  const el = $('conjure-count'); if (!el) return;
+  let n = 0;
+  try {
+    const res = await authFetch(api('saved'));
+    if (res && res.ok) {
+      const flags = (await res.json()).flags || {};
+      for (const f of Object.values(flags)) if (f && f.pinned && !f.applied && f.available) n++;
+    }
+  } catch { /* best-effort — a missing count just hides the badge */ }
+  const prev = Number(el.dataset.n || '0');
+  el.dataset.n = String(n);
+  el.textContent = String(n);
+  el.hidden = n === 0;
+  if (n > prev) { el.classList.remove('bump'); void el.offsetWidth; el.classList.add('bump'); }
 }
 function showScry() {
   $('runview').hidden = true;
   $('scry-root').hidden = false;
   $('conjure-root').hidden = true;
   $('codex-root').hidden = true;
-  if (!scryMounted) { mountScry($('scry-root'), { authFetch, onNewSearch: openSearchAt, onRefresh: doRefresh }); scryMounted = true; }
+  if (!scryMounted) { mountScry($('scry-root'), { authFetch, onNewSearch: openSearchAt, onRefresh: doRefresh, onShortlistChange: refreshTabCounts }); scryMounted = true; }
 }
 function showConjure() {
   $('runview').hidden = true;
   $('scry-root').hidden = true;
   $('conjure-root').hidden = false;
   $('codex-root').hidden = true;
-  mountConjure($('conjure-root'), { api, authFetch }); // re-fetch each show (reflect fresh Consecrates)
+  mountConjure($('conjure-root'), { api, authFetch, onShortlistChange: refreshTabCounts }); // re-fetch each show (reflect fresh Consecrates)
 }
 function showCodex() {
   $('runview').hidden = true;
@@ -262,7 +283,7 @@ mountAccountFab({
 // Disclose demo limits to non-admins: the search popover carries the "one scan per week,
 // sample results" note so a visitor knows the deal before launching a scan.
 function updateDemoUI() { const el = $('sp-demo'); if (el) el.hidden = role === 'admin'; }
-onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; updateDemoUI(); });
+onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; updateDemoUI(); refreshTabCounts(); });
 
 // ---- boot: load the field/location catalogs, then show Scry ----
 fetch(api('config')).then((r) => r.json()).then((c) => {

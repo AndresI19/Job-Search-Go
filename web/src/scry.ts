@@ -15,6 +15,7 @@ interface ScryDeps {
   authFetch: (url: string, init?: RequestInit) => Promise<Response | null>;
   onNewSearch: (anchor: HTMLElement) => void; // open the search popover (host owns the scan)
   onRefresh: () => void; // prune delisted jobs (host owns it)
+  onShortlistChange?: () => void; // consecrate changed the shortlist — refresh the Conjure tab badge
 }
 
 const esc = (s: unknown) =>
@@ -316,7 +317,8 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
         if (willPin) st.pinned.add(u); else st.pinned.delete(u);
         btn.classList.toggle('on', willPin);
         btn.textContent = willPin ? '★' : '☆';
-        flash(willPin ? '★ Consecrated — added to your shortlist' : 'Removed from your shortlist');
+        flash(willPin ? '★ Consecrated — waiting in Conjure' : 'Removed from your shortlist');
+        deps.onShortlistChange?.();
       })
       .catch(() => flash('Could not save'));
   }
