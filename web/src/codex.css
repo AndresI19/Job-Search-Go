@@ -1,0 +1,67 @@
+/* The Codex room. Its own bronze/amber accent (a grimoire) — distinct from Scry's navy
+   and Conjure's teal — over the shared platform tokens. */
+:root {
+  --cx: #b45309;      /* bronze accent */
+  --cx-ink: #fff;
+}
+@media (prefers-color-scheme: dark) {
+  :root { --cx: #e0a24a; }
+}
+:root[data-theme='dark'] { --cx: #e0a24a; }
+:root[data-theme='light'] { --cx: #b45309; }
+
+.cx-note { color: var(--cx); font-weight: 700; }
+
+/* Param bar — one input per distinct {{TOKEN}}, filled once and reused on every Copy. */
+.cx-parambar { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; background: color-mix(in srgb, var(--cx) 7%, var(--panel)); border: 1px solid var(--line); border-radius: 13px; padding: 12px 14px; margin: 0 2px 14px; }
+.cx-parhead { font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--cx); align-self: center; margin-right: 2px; }
+.cx-param { display: flex; flex-direction: column; gap: 4px; font-size: 11px; font-weight: 700; color: var(--muted); }
+.cx-param input { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 9px; font: 500 13px/1 inherit; min-width: 150px; }
+.cx-param input:focus { outline: none; border-color: var(--cx); }
+
+.cx-toolbar { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin: 0 2px 14px; }
+.cx-chips { display: flex; gap: 6px; flex-wrap: wrap; }
+.cx-chip { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 999px; padding: 5px 12px; font: 800 12px/1 inherit; cursor: pointer; }
+.cx-chip:hover { color: var(--cx); border-color: var(--cx); }
+.cx-chip.on { background: var(--cx); color: var(--cx-ink); border-color: transparent; }
+.cx-new { margin-left: auto; }
+
+.cx-btn { border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 9px; padding: 7px 13px; font: 800 12.5px/1 inherit; cursor: pointer; }
+.cx-btn:hover { border-color: var(--cx); color: var(--cx); }
+.cx-btn.primary { background: var(--cx); color: var(--cx-ink); border-color: transparent; }
+.cx-btn.primary:hover { color: var(--cx-ink); filter: brightness(1.06); }
+.cx-btn.danger:hover { border-color: #d0433b; color: #d0433b; }
+
+/* Editor panel */
+.cx-editor { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 18px; margin: 0 2px 16px; display: flex; flex-direction: column; gap: 12px; }
+.cx-ed-h { font-weight: 820; font-size: 15px; color: var(--ink); }
+.cx-field { display: flex; flex-direction: column; gap: 5px; font-size: 11px; font-weight: 700; color: var(--muted); }
+.cx-field span { text-transform: none; letter-spacing: 0; }
+.cx-field input, .cx-field textarea { border: 1px solid var(--line); background: var(--panel-2); color: var(--ink); border-radius: 9px; padding: 8px 11px; font: 500 13.5px/1.5 inherit; resize: vertical; }
+.cx-field input:focus, .cx-field textarea:focus { outline: none; border-color: var(--cx); background: var(--panel); }
+.cx-field textarea { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12.5px; }
+.cx-field-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.cx-field-row .cx-field { flex: 1; min-width: 180px; }
+.cx-ed-actions { display: flex; justify-content: flex-end; gap: 10px; }
+
+/* Cards */
+.cx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 14px; }
+.cx-card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 15px 16px; display: flex; flex-direction: column; gap: 11px; }
+.cx-card.starter { border-style: dashed; background: var(--panel-2); }
+.cx-card-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
+.cx-title { font-weight: 800; font-size: 15px; line-height: 1.25; letter-spacing: -.01em; }
+.cx-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 5px; }
+.cx-cat { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cx); background: color-mix(in srgb, var(--cx) 13%, transparent); border-radius: 6px; padding: 2px 8px; }
+.cx-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }
+.cx-tag { font-size: 11px; color: var(--muted); background: var(--panel-2); border-radius: 6px; padding: 2px 7px; }
+.cx-body { margin: 0; white-space: pre-wrap; word-break: break-word; font: 400 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: var(--panel-2); border: 1px solid var(--line); border-radius: 10px; padding: 10px 12px; max-height: 190px; overflow: auto; }
+.cx-tokens { display: flex; flex-wrap: wrap; gap: 6px; }
+.cx-tokens code { font-size: 11px; color: var(--cx); background: color-mix(in srgb, var(--cx) 10%, transparent); border-radius: 5px; padding: 2px 6px; }
+.cx-actions { display: flex; gap: 8px; margin-top: auto; justify-content: flex-end; flex-wrap: wrap; }
+
+.cx-empty { color: var(--muted); font-size: 13px; padding: 18px 2px; }
+.cx-sec { font-weight: 800; font-size: 12px; letter-spacing: .05em; text-transform: uppercase; color: var(--muted); margin: 22px 2px 12px; }
+.cx-secsub { font-weight: 600; text-transform: none; letter-spacing: 0; color: var(--muted); opacity: .8; margin-left: 8px; }
+
+.codex-toast { position: fixed; left: 50%; bottom: 22px; transform: translateX(-50%) translateY(20px); background: var(--ink); color: var(--panel); padding: 9px 16px; border-radius: 10px; font-size: 13px; font-weight: 600; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); opacity: 0; pointer-events: none; transition: .25s; z-index: 60; }
+.codex-toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }

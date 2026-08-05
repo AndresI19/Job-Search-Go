@@ -19,6 +19,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -110,6 +111,19 @@ CREATE TABLE IF NOT EXISTS job_summaries (
   pay_note   TEXT NOT NULL DEFAULT '',
   model      TEXT NOT NULL DEFAULT '',
   created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+-- Codex templates: a user's reusable copy-paste application text (cover letters,
+-- snippets, Q&A). Keyed by (user_id, id) — the id is client-generated so the same
+-- id scheme works whether a template lives here or in a guest's localStorage.
+CREATE TABLE IF NOT EXISTS templates (
+  id         TEXT NOT NULL,
+  user_id    TEXT NOT NULL,
+  title      TEXT NOT NULL DEFAULT '',
+  category   TEXT NOT NULL DEFAULT '',
+  body       TEXT NOT NULL DEFAULT '',
+  tags       TEXT NOT NULL DEFAULT '',
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, id)
 );`
 
 // Migrate creates the tables if absent. Idempotent; safe to run every boot.
@@ -432,5 +446,65 @@ func (d *DB) SetSaved(ctx context.Context, userID, url string, f SavedFlags) err
 		ON CONFLICT (user_id, url) DO UPDATE SET
 			pinned = EXCLUDED.pinned, applied = EXCLUDED.applied, updated_at = now()`,
 		userID, url, f.Pinned, f.Applied)
+	return err
+}
+
+// Template is one Codex entry — a user's reusable copy-paste application text. The id
+// is client-generated (so guest-localStorage and server templates share a scheme); tags
+// are a comma-joined string, kept flat like the rest of this store.
+type Template struct {
+	ID        string    `json:"id"`
+	Title     string    `json:"title"`
+	Category  string    `json:"category"`
+	Body      string    `json:"body"`
+	Tags      string    `json:"tags"`
+	UpdatedAt time.Time `json:"updatedAt"`
+}
+
+// Templates returns a user's Codex templates, newest first. Nil-safe: empty for an
+// anonymous caller or with no DB (guests keep theirs in localStorage instead).
+func (d *DB) Templates(ctx context.Context, userID string) ([]Template, error) {
+	if !d.Enabled() || userID == "" {
+		return nil, nil
+	}
+	rows, err := d.pool.Query(ctx, `
+		SELECT id, title, category, body, tags, updated_at
+		FROM templates WHERE user_id = $1 ORDER BY updated_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []Template
+	for rows.Next() {
+		var t Template
+		if err := rows.Scan(&t.ID, &t.Title, &t.Category, &t.Body, &t.Tags, &t.UpdatedAt); err != nil {
+			return nil, err
+		}
+		out = append(out, t)
+	}
+	return out, rows.Err()
+}
+
+// UpsertTemplate creates or updates one of a user's templates (keyed by user_id + id).
+func (d *DB) UpsertTemplate(ctx context.Context, userID string, t Template) error {
+	if !d.Enabled() || userID == "" || t.ID == "" {
+		return nil
+	}
+	_, err := d.pool.Exec(ctx, `
+		INSERT INTO templates (id, user_id, title, category, body, tags, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, now())
+		ON CONFLICT (user_id, id) DO UPDATE SET
+			title = EXCLUDED.title, category = EXCLUDED.category,
+			body = EXCLUDED.body, tags = EXCLUDED.tags, updated_at = now()`,
+		t.ID, userID, t.Title, t.Category, t.Body, t.Tags)
+	return err
+}
+
+// DeleteTemplate removes one of a user's templates.
+func (d *DB) DeleteTemplate(ctx context.Context, userID, id string) error {
+	if !d.Enabled() || userID == "" || id == "" {
+		return nil
+	}
+	_, err := d.pool.Exec(ctx, `DELETE FROM templates WHERE user_id = $1 AND id = $2`, userID, id)
 	return err
 }
