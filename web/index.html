@@ -8,11 +8,12 @@
 <script type="module" src="/src/main.ts"></script>
 </head>
 <body>
+<div id="jb-bg" aria-hidden="true"></div>
 
 <header class="jb-top">
   <a class="jb-hometab" href="/" title="Back to the platform home" aria-label="Back to home"><span class="ht-g">⌂</span> Home</a>
   <div class="jb-brand">
-    <svg class="zodiac" viewBox="0 0 24 24" aria-hidden="true"><defs><linearGradient id="zw" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="var(--accent2)"/><stop offset="1" stop-color="var(--accent)"/></linearGradient></defs><g fill="none" stroke="url(#zw)" stroke-width="0.9" stroke-linecap="round"><circle cx="12" cy="12" r="11"/><circle cx="12" cy="12" r="7.2"/><g><line x1="12" y1="4.8" x2="12" y2="1"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(30 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(60 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(90 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(120 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(150 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(180 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(210 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(240 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(270 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(300 12 12)"/><line x1="12" y1="4.8" x2="12" y2="1" transform="rotate(330 12 12)"/></g><circle cx="12" cy="12" r="3.4"/><g stroke-width="0.8"><line x1="12" y1="10.4" x2="12" y2="9.2"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(45 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(90 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(135 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(180 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(225 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(270 12 12)"/><line x1="12" y1="10.4" x2="12" y2="9.2" transform="rotate(315 12 12)"/></g></g><circle cx="12" cy="12" r="1.4" fill="url(#zw)"/></svg>
+    <span class="zodiac" id="jb-wheel" aria-hidden="true"></span>
     <span class="jb-brandtext"><span class="jb-name">Job<b>omancer</b></span><span class="jb-eyebrow">Divine the real from the illusions</span></span>
   </div>
   <div class="jb-modes" id="jb-modes">
