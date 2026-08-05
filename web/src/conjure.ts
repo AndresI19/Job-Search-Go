@@ -262,6 +262,15 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     );
     // Drag any card onto the Trash tab to dismiss it (works from every Conjure page).
     root.querySelectorAll<HTMLElement>('.ccard[draggable]').forEach((card) => {
+      // Keyboard path for drag-to-trash: focus a card (Tab) and press Delete/Backspace.
+      if (!card.hasAttribute('tabindex')) card.tabIndex = 0;
+      card.setAttribute('aria-keyshortcuts', 'Delete');
+      card.addEventListener('keydown', (e) => {
+        if ((e.key === 'Delete' || e.key === 'Backspace') && document.activeElement === card) {
+          e.preventDefault();
+          trashByUrl(card.dataset.u!);
+        }
+      });
       card.addEventListener('dragstart', (e) => {
         const dt = (e as DragEvent).dataTransfer!;
         dt.setData('text/plain', card.dataset.u!);

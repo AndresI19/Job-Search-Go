@@ -24,3 +24,19 @@ func TestAllowDemoRun(t *testing.T) {
 		t.Error("a different key should be allowed independently")
 	}
 }
+
+// The escape hatch that lets paid backends run without platform auth (trusted local testing).
+func TestUnauthedRealAllowed(t *testing.T) {
+	t.Setenv("ALLOW_UNAUTHENTICATED_REAL", "")
+	if unauthedRealAllowed() {
+		t.Error("unset should be false — a deploy without auth must stay mock-only")
+	}
+	t.Setenv("ALLOW_UNAUTHENTICATED_REAL", "1")
+	if !unauthedRealAllowed() {
+		t.Error(`"1" should opt in`)
+	}
+	t.Setenv("ALLOW_UNAUTHENTICATED_REAL", "true")
+	if unauthedRealAllowed() {
+		t.Error("only exactly \"1\" opts in, not any truthy string")
+	}
+}

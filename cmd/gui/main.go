@@ -97,6 +97,16 @@ func main() {
 	if err := s.enableLive(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: Admin (real) runs unavailable — %v; Admin will fall back to mock\n", err)
 	}
+	// Safety invariant: paid backends (Apify scrape, Claude verify + summaries) may only run
+	// when platform auth is configured — otherwise "admin" is just an unverified role claim
+	// anyone could spoof to spend the keys. Without auth we stay mock-only, UNLESS an operator
+	// explicitly opts in for trusted local testing (ALLOW_UNAUTHENTICATED_REAL=1).
+	if s.realReady && s.auth == nil && !unauthedRealAllowed() {
+		fmt.Fprintf(os.Stderr, "SECURITY: real pipeline disabled — AUTH_JWKS_URI is not configured, so admin cannot be verified. Set it to enable live runs (or ALLOW_UNAUTHENTICATED_REAL=1 for trusted local testing).\n")
+		s.realReady = false
+	} else if s.realReady && s.auth == nil {
+		fmt.Fprintf(os.Stderr, "WARNING: real pipeline enabled WITHOUT auth (ALLOW_UNAUTHENTICATED_REAL=1) — admin is unverified; trusted local testing only.\n")
+	}
 
 	// Applicator summaries (Claude). Independent of Apify — needs only the DB and a
 	// summarizer backend (SUMMARIZE_BACKEND, else JUDGE_BACKEND). Best-effort: a
@@ -1081,6 +1091,10 @@ func (s *server) codex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// unauthedRealAllowed reports the explicit opt-in that lets paid backends run without platform
+// auth — trusted LOCAL testing only. A real deploy must set AUTH_JWKS_URI instead.
+func unauthedRealAllowed() bool { return os.Getenv("ALLOW_UNAUTHENTICATED_REAL") == "1" }
+
 // demoRunWindow is how often a non-admin (demo) visitor may launch a scan.
 const demoRunWindow = 7 * 24 * time.Hour
 
@@ -1168,8 +1182,9 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 	}
 	// Admins get real Claude summaries; everyone else gets the $0 MockSummarizer, so the
 	// demo funnel (Consecrate → Discern → apply cards) works end-to-end without spending a
-	// token. The real backend is never reachable by a non-admin.
-	admin := s.auth == nil || s.auth.IsAdmin(r)
+	// token. The real backend is never reachable by a non-admin — and never at all without
+	// configured auth (a verified admin), the same invariant the run pipeline enforces.
+	admin := (s.auth != nil && s.auth.IsAdmin(r)) || (s.auth == nil && unauthedRealAllowed())
 	var summarizer summarize.Summarizer = summarize.MockSummarizer{}
 	modelTag := "mock"
 	if admin {
