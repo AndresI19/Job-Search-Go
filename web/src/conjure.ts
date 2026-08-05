@@ -8,6 +8,7 @@
 // (authFetch/api) rather than imported, so this module type-checks without the untyped
 // @platform/ui surface.
 import './conjure.css';
+import { fetchTemplates, fill, STARTERS, type Template } from './codex';
 
 // The api/applicator row (mirror of cmd/gui applyRow). A job is Discerned when it
 // carries a summary; Consecrated (saved, not yet summarized) when the summary is blank.
@@ -35,6 +36,7 @@ export interface ApplyJob {
 interface ConjureDeps {
   api: (p: string) => string;
   authFetch: (url: string, init?: RequestInit) => Promise<Response | null>;
+  isSignedIn: () => boolean; // for loading the Codex templates behind "Cover letter"
   onShortlistChange?: () => void; // manifest/trash/restore changed the shortlist — refresh the tab badge
 }
 
@@ -66,6 +68,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let trashed: ApplyJob[] = []; // saved, dismissed / no longer available
   let sub: 'consecrated' | 'discerned' | 'manifested' | 'trashed' = 'discerned';
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
+  let codexTemplates: Template[] | null = null; // lazily loaded for the "Cover letter" picker
   // Discern progress: while active, render() shows a dedicated loading screen (Claude reads
   // each posting) instead of the card board, with a live done/total track.
   const discerning = { active: false, done: 0, total: 0 };
@@ -111,9 +114,56 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       </div>
       <div class="cfoot"><div class="pay">${payFoot(j)}</div>
         <div class="cact"><a class="openbtn" href="${esc(j.apply)}" target="_blank" rel="noopener">Open posting ↗</a>
+          <button class="openbtn letterbtn" type="button" data-u="${esc(j.u)}" title="Copy a Codex template, filled for this job">✍ Cover letter</button>
           <button class="openbtn manifest-btn" type="button">✓ Mark manifested</button></div></div>
       ${j.a ? '' : '<div class="gone">⚠ No longer listed</div>'}
     </article>`;
+  }
+
+  const findJob = (u: string): ApplyJob | undefined =>
+    jobs.find((x) => x.u === u) || manifested.find((x) => x.u === u) || trashed.find((x) => x.u === u);
+
+  // Cover-letter auto-fill: pick one of your Codex templates and copy it with {{COMPANY}} /
+  // {{POSITION}} / {{ROLE}} already filled from THIS job — the seam that joins Conjure to Codex.
+  async function openLetterPicker(btn: HTMLElement, u: string): Promise<void> {
+    document.querySelector('.letter-pop')?.remove();
+    const j = findJob(u);
+    if (!j) return;
+    if (codexTemplates === null) {
+      const orig = btn.textContent;
+      btn.textContent = '✍ Loading…';
+      try { codexTemplates = await fetchTemplates(deps); } catch { codexTemplates = []; }
+      btn.textContent = orig;
+    }
+    const tpls: Template[] = codexTemplates || [];
+    const params: Record<string, string> = { COMPANY: j.c, POSITION: j.t, ROLE: j.role || j.t };
+    // Your templates first; fall back to the generic starters so an empty Codex is still useful.
+    const pool = (tpls.length ? tpls : STARTERS).filter((t) => t.category !== 'Quick Info');
+    const pop = document.createElement('div');
+    pop.className = 'letter-pop';
+    pop.innerHTML = `<div class="lp-head">Copy for <b>${esc(j.c)}</b><span class="lp-sub">{{COMPANY}} · {{POSITION}} filled in</span></div>${
+      pool.length
+        ? `<div class="lp-list">${pool.map((t, i) => `<button class="lp-item" data-i="${i}"><span class="lp-t">${esc(t.title)}</span><span class="lp-cat">${esc(t.category || '')}</span></button>`).join('')}</div>`
+        : `<div class="lp-empty">No templates yet — add cover letters in the <b>📖 Codex</b>.</div>`
+    }`;
+    document.body.appendChild(pop);
+    const r = btn.getBoundingClientRect();
+    pop.style.top = r.bottom + 6 + 'px';
+    pop.style.left = Math.max(8, Math.min(r.left, window.innerWidth - pop.offsetWidth - 8)) + 'px';
+    const close = () => { pop.remove(); document.removeEventListener('click', onDoc); document.removeEventListener('keydown', onKey); };
+    const onDoc = (e: MouseEvent) => { if (!pop.contains(e.target as Node) && e.target !== btn) close(); };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') close(); };
+    setTimeout(() => { document.addEventListener('click', onDoc); document.addEventListener('keydown', onKey); }, 0);
+    pop.querySelectorAll<HTMLElement>('.lp-item').forEach((el) =>
+      el.addEventListener('click', () => {
+        const t = pool[Number(el.dataset.i)];
+        navigator.clipboard?.writeText(fill(t.body, params)).then(
+          () => toast(`📋 Copied “${t.title}” — filled for ${j.c}`),
+          () => toast('Copy blocked by the browser'),
+        );
+        close();
+      }),
+    );
   }
 
   // A Trash card: read-only — a job you dismissed, or one the Refresh sweep retired.
@@ -203,6 +253,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     );
     root.querySelectorAll<HTMLButtonElement>('.manifest-btn').forEach((b) =>
       b.addEventListener('click', () => markManifested(b.closest('.ccard') as HTMLElement))
+    );
+    root.querySelectorAll<HTMLButtonElement>('.letterbtn').forEach((b) =>
+      b.addEventListener('click', (e) => { e.stopPropagation(); openLetterPicker(b, b.dataset.u!); })
     );
     root.querySelectorAll<HTMLButtonElement>('.unmani').forEach((b) =>
       b.addEventListener('click', () => markUnmanifested(b.closest('.ccard') as HTMLElement))

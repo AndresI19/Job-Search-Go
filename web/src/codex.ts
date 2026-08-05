@@ -8,7 +8,7 @@
 // is never blank. Self-contained and typed — platform auth is injected, never imported.
 import './codex.css';
 
-interface Template {
+export interface Template {
   id: string;
   title: string;
   category: string;
@@ -18,7 +18,7 @@ interface Template {
   starter?: boolean; // built-in, read-only
 }
 
-interface CodexDeps {
+export interface CodexDeps {
   api: (p: string) => string;
   authFetch: (url: string, init?: RequestInit) => Promise<Response | null>;
   isSignedIn: () => boolean;
@@ -35,7 +35,7 @@ const esc = (s: unknown) =>
 
 // Generic, non-personal skeletons — safe to ship. They demonstrate tokens and the Copy
 // flow without revealing anyone's real letters. Read-only; "Duplicate" makes an editable copy.
-const STARTERS: Template[] = [
+export const STARTERS: Template[] = [
   {
     id: 'starter:cover',
     starter: true,
@@ -74,10 +74,21 @@ function tokensIn(body: string): string[] {
   return out;
 }
 // Fill known tokens; leave unknown ones as-is so an unfilled field is visible in the paste.
-function fill(body: string, params: Record<string, string>): string {
+export function fill(body: string, params: Record<string, string>): string {
   return body.replace(TOKEN_RE, (whole, tok) => (params[tok] ? params[tok] : whole));
 }
 const prettyToken = (t: string) => t.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
+
+const loadLocalTemplates = (): Template[] => { try { return JSON.parse(localStorage.getItem(LS_TPL) || '[]'); } catch { return []; } };
+// Shared loader: a user's templates (server when signed in, localStorage for guests). Used by
+// the Codex room AND by Conjure's "cover letter" auto-fill, so both read the same store.
+export async function fetchTemplates(deps: CodexDeps): Promise<Template[]> {
+  if (deps.isSignedIn()) {
+    try { const res = await deps.authFetch(deps.api('codex')); if (res && res.ok) return ((await res.json()).templates || []) as Template[]; } catch { /* fall through to empty */ }
+    return [];
+  }
+  return loadLocalTemplates();
+}
 
 export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   let templates: Template[] = [];
@@ -117,18 +128,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
 
   async function load(): Promise<void> {
     root.innerHTML = `<p class="croomnote">Loading your Codex…</p>`;
-    let mine: Template[] = [];
-    if (deps.isSignedIn()) {
-      try {
-        const res = await deps.authFetch(deps.api('codex'));
-        if (res && res.ok) mine = ((await res.json()).templates || []) as Template[];
-      } catch {
-        mine = [];
-      }
-    } else {
-      mine = loadLocal();
-    }
-    templates = mine;
+    templates = await fetchTemplates(deps);
     render();
   }
 
