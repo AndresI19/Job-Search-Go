@@ -69,6 +69,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   let sub: 'consecrated' | 'discerned' | 'manifested' | 'trashed' = 'discerned';
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
   let codexTemplates: Template[] | null = null; // lazily loaded for the "Cover letter" picker
+  let lastLetter: { title: string; company: string; text: string } | null = null; // shown in the Discerned preview panel
   // Discern progress: while active, render() shows a dedicated loading screen (Claude reads
   // each posting) instead of the card board, with a live done/total track.
   const discerning = { active: false, done: 0, total: 0 };
@@ -157,13 +158,32 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     pop.querySelectorAll<HTMLElement>('.lp-item').forEach((el) =>
       el.addEventListener('click', () => {
         const t = pool[Number(el.dataset.i)];
-        navigator.clipboard?.writeText(fill(t.body, params)).then(
+        const text = fill(t.body, params);
+        lastLetter = { title: t.title, company: j.c, text };
+        navigator.clipboard?.writeText(text).then(
           () => toast(`📋 Copied “${t.title}” — filled for ${j.c}`),
           () => toast('Copy blocked by the browser'),
         );
         close();
+        render(); // reveal it in the Discerned preview panel
       }),
     );
+  }
+
+  // The Discerned preview panel — a Codex-toned column reserving the right edge to show the
+  // cover letter you just copied (at the cost of one grid column). Distinct from the table.
+  function letterPreview(): string {
+    if (!lastLetter) {
+      return `<aside class="letter-preview empty">
+        <div class="lpv-head">✍ Cover letter</div>
+        <p class="lpv-hint">Pick <b>✍ Cover letter</b> on a card to fill a Codex template with this job's company &amp; role — it's copied to your clipboard and shown here.</p>
+      </aside>`;
+    }
+    return `<aside class="letter-preview">
+      <div class="lpv-head">✍ ${esc(lastLetter.title)}<span class="lpv-for">for <b>${esc(lastLetter.company)}</b></span></div>
+      <pre class="lpv-body">${esc(lastLetter.text)}</pre>
+      <button class="lpv-copy" type="button">📋 Copy again</button>
+    </aside>`;
   }
 
   // A Trash card: read-only — a job you dismissed, or one the Refresh sweep retired.
@@ -246,8 +266,13 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
           ${actions}
         </div>
       </div>
-      <div class="cgrid">${cards}</div>`;
+      ${sub === 'discerned'
+        ? `<div class="discerned-wrap"><div class="cgrid">${cards}</div>${letterPreview()}</div>`
+        : `<div class="cgrid">${cards}</div>`}`;
 
+    root.querySelector<HTMLButtonElement>('.lpv-copy')?.addEventListener('click', () => {
+      if (lastLetter) navigator.clipboard?.writeText(lastLetter.text).then(() => toast('📋 Copied again'), () => toast('Copy blocked by the browser'));
+    });
     root.querySelectorAll<HTMLElement>('.csubs button').forEach((b) =>
       b.addEventListener('click', () => { sub = b.dataset.sub as typeof sub; render(); })
     );

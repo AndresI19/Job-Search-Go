@@ -53,8 +53,8 @@
 .manichk { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--muted); cursor: pointer; }
 .manichk input { width: 15px; height: 15px; accent-color: var(--accent); cursor: pointer; }
 .gone { font-size: 11px; color: #d0433b; font-weight: 700; }
-.ccard.applied { opacity: .78; }
-.ccard.trashed { opacity: .68; border-style: solid; }
+.ccard.applied { opacity: 1; }
+.ccard.trashed { opacity: 1; border-style: solid; }
 /* Actions pinned to the card bottom so they line up across a row. */
 .cfoot { margin-top: auto; }
 /* Drag any card onto the Trash tab to dismiss it. */
@@ -126,3 +126,22 @@
 .lp-t { font-weight: 700; font-size: 13px; }
 .lp-cat { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); white-space: nowrap; }
 .lp-empty { padding: 16px 14px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
+
+/* Discerned two-column layout: the card grid plus a reserved cover-letter preview on the
+   right. The grid narrows (a column fewer) to make room. */
+.discerned-wrap { display: flex; gap: 16px; align-items: flex-start; }
+.discerned-wrap .cgrid { flex: 1; min-width: 0; }
+/* Preview panel — Codex bronze/amber tone (var --codex / #b45309), distinct from the teal
+   Conjure cards and the Scry table. */
+.letter-preview { flex: none; width: 340px; position: sticky; top: 78px; background: color-mix(in srgb, var(--codex, #b45309) 8%, var(--panel)); border: 1px solid color-mix(in srgb, var(--codex, #b45309) 40%, var(--line)); border-top: 2px solid var(--codex, #b45309); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 15px 16px; display: flex; flex-direction: column; gap: 12px; max-height: calc(100vh - 96px); }
+.lpv-head { font-family: var(--serif, inherit); font-size: 16px; font-weight: 600; color: var(--codex, #b45309); display: flex; flex-direction: column; gap: 2px; }
+.lpv-for { font-family: var(--sans, inherit); font-size: 11.5px; font-weight: 600; color: var(--muted); }
+.lpv-for b { color: var(--ink); }
+.lpv-hint { font-size: 12.5px; color: var(--muted); line-height: 1.55; margin: 0; }
+.lpv-body { margin: 0; white-space: pre-wrap; word-break: break-word; font: 400 12.5px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--ink); background: color-mix(in srgb, var(--codex, #b45309) 6%, var(--panel-2)); border: 1px solid color-mix(in srgb, var(--codex, #b45309) 22%, var(--line)); border-radius: 10px; padding: 11px 12px; overflow: auto; flex: 1; }
+.lpv-copy { border: 0; border-radius: 10px; padding: 9px 14px; font-weight: 800; font-size: 13px; cursor: pointer; color: #fff; background: linear-gradient(180deg, color-mix(in srgb, var(--codex, #b45309) 88%, #fff), var(--codex, #b45309)); }
+.lpv-copy:hover { filter: brightness(1.06); }
+@media (max-width: 900px) {
+  .discerned-wrap { flex-direction: column; }
+  .letter-preview { width: 100%; position: static; max-height: none; order: -1; }
+}
