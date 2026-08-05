@@ -124,6 +124,10 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 /* New search + Refresh live on the context bar (compact). */
 .scry-run { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
 .scry-ctx .scry-run + .scry-run { margin-left: 2px; }
+/* Global free-text search — filters the grid by title / company / location. */
+.scry-search { flex: 1 1 220px; max-width: 340px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 11px; font: 500 12.5px/1.2 inherit; }
+.scry-search::placeholder { color: var(--muted); }
+.scry-search:focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--accent) 16%, transparent); }
 .scry-tip { position: fixed; z-index: 60; display: none; max-width: 340px; background: var(--ink); color: var(--panel); padding: 6px 10px; border-radius: 8px; font-size: 12px; line-height: 1.4; box-shadow: var(--shadow-lg, 0 14px 44px rgba(20,22,40,.17)); pointer-events: none; white-space: nowrap; }
 .filt-open { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 8px; padding: 4px 11px; font: 700 12px/1 inherit; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; margin-left: 8px; }
 .filt-open:hover { color: var(--accent); border-color: var(--accent); }

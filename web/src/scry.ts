@@ -81,6 +81,7 @@ interface Col {
 
 interface State {
   rows: Result[];
+  q: string; // global free-text search (title / company / location)
   streaming: boolean; // a live scan owns the grid — the initial fetch must not clobber it
   pinned: Set<string>; // consecrated URLs
   sortIdx: number;
@@ -114,7 +115,7 @@ export function scryStreamRows(rows: Result[]): void {
 
 export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const st: State = {
-    rows: [], streaming: false, pinned: new Set(), sortIdx: -1, sortDir: -1, page: 0, pay: 'all', newOnly: false,
+    rows: [], q: '', streaming: false, pinned: new Set(), sortIdx: -1, sortDir: -1, page: 0, pay: 'all', newOnly: false,
     roles: new Set(), locs: new Set(), remote: new Set(), payLo: null, payHi: null, scoreMin: null, daysMax: null,
   };
 
@@ -132,7 +133,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const SPAN = COLS.length + 1; // + the ★ column
 
   const anyFilter = () =>
-    st.pay !== 'all' || st.newOnly || st.roles.size || st.locs.size || st.remote.size || st.payLo != null || st.payHi != null || st.scoreMin != null || st.daysMax != null;
+    !!st.q || st.pay !== 'all' || st.newOnly || st.roles.size || st.locs.size || st.remote.size || st.payLo != null || st.payHi != null || st.scoreMin != null || st.daysMax != null;
   // count of active filter GROUPS, for the Filters button badge
   const filterCount = () =>
     (st.pay !== 'all' ? 1 : 0) + (st.newOnly ? 1 : 0) + (st.roles.size ? 1 : 0) + (st.locs.size ? 1 : 0) + (st.remote.size ? 1 : 0) + (st.payLo != null || st.payHi != null ? 1 : 0) + (st.scoreMin != null ? 1 : 0) + (st.daysMax != null ? 1 : 0);
@@ -141,6 +142,10 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
   function view(): Result[] {
     let rows = st.rows.slice();
+    if (st.q) {
+      const q = st.q.toLowerCase();
+      rows = rows.filter((r) => `${r.title} ${r.company} ${r.location}`.toLowerCase().includes(q));
+    }
     if (st.newOnly) rows = rows.filter((r) => r.new);
     if (st.pay === 'has') rows = rows.filter((r) => r.payState !== 'none');
     else if (st.pay === 'none') rows = rows.filter((r) => r.payState === 'none');
@@ -215,6 +220,10 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const refilter = () => { st.page = 0; render(); };
 
   function render(): void {
+    // render() rebuilds the ctx bar via innerHTML, so a live search box would lose focus
+    // per keystroke — capture focus + caret here and restore them after the rebuild.
+    const searchFocused = (document.activeElement as HTMLElement | null)?.id === 'scry-search';
+    const caret = searchFocused ? (document.activeElement as HTMLInputElement).selectionStart : null;
     const rows = view();
     const fresh = rows.filter((r) => r.new);
     const older = rows.filter((r) => !r.new);
@@ -242,6 +251,7 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
     root.innerHTML = `
       <div class="scry-ctx"><b>${total}</b> verified job${total === 1 ? '' : 's'}${fresh.length ? ` · <span class="newpill">✨ ${fresh.length} new</span>` : ''}
+        <input class="scry-search" id="scry-search" type="search" placeholder="Search title, company, location…  ( / )" value="${esc(st.q)}" aria-label="Search jobs" autocomplete="off">
         <button class="scry-run primary" id="ctx-newsearch">▶&nbsp; New search</button>
         <button class="scry-run rbtn" id="ctx-refresh" title="Re-check listings; retire any no longer available">↻&nbsp; Refresh</button>
         <button class="filt-open" id="scry-filters">⏷ Filters${fc ? ` <span class="filt-badge">${fc}</span>` : ''}</button>
@@ -272,9 +282,15 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     if (ns) ns.addEventListener('click', (e) => { e.stopPropagation(); deps.onNewSearch(ns as HTMLElement); });
     const rf = root.querySelector('#ctx-refresh');
     if (rf) rf.addEventListener('click', () => deps.onRefresh());
+    const si = root.querySelector<HTMLInputElement>('#scry-search');
+    if (si) {
+      si.addEventListener('input', () => { st.q = si.value; st.page = 0; render(); });
+      si.addEventListener('keydown', (e) => { if (e.key === 'Escape' && si.value) { e.stopPropagation(); si.value = ''; st.q = ''; st.page = 0; render(); } });
+      if (searchFocused) { si.focus(); const p = caret ?? si.value.length; try { si.setSelectionRange(p, p); } catch { /* not selectable */ } }
+    }
     const clear = root.querySelector('#scry-clear');
     if (clear) clear.addEventListener('click', () => {
-      st.pay = 'all'; st.newOnly = false; st.roles.clear(); st.locs.clear(); st.remote.clear();
+      st.q = ''; st.pay = 'all'; st.newOnly = false; st.roles.clear(); st.locs.clear(); st.remote.clear();
       st.payLo = st.payHi = st.scoreMin = st.daysMax = null; refilter();
     });
   }
@@ -386,6 +402,20 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   // Load the verified set and the user's already-consecrated URLs (best-effort).
   // Custom tooltip for the Posted cell (data-tip) — a 350ms dwell, ~30% faster than the
   // browser's native title delay. Delegated on root (survives re-renders); set up once.
+  // Press "/" anywhere (while Scry is visible and you're not already typing) to jump to
+  // the search box. Bound once on the stable root element.
+  if (!root.dataset.searchKeyReady) {
+    root.dataset.searchKeyReady = '1';
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== '/' || e.metaKey || e.ctrlKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return;
+      if (root.offsetParent === null) return; // Scry not the visible room
+      const si = root.querySelector<HTMLInputElement>('#scry-search');
+      if (si) { e.preventDefault(); si.focus(); si.select(); }
+    });
+  }
+
   if (!root.dataset.tipReady) {
     root.dataset.tipReady = '1';
     const tip = document.createElement('div');
