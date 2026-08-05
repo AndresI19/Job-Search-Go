@@ -267,10 +267,16 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       .then((res) => {
         if (!res) throw new Error('Sign in as an admin to refresh');
         if (!res.ok) return res.text().then((t) => Promise.reject(new Error(t)));
-        return res.json() as Promise<{ removed: number }>;
+        return res.json() as Promise<{ removed: number; demo?: boolean }>;
       })
-      .then(({ removed }) => {
-        toast(`🗑 Swept ${removed} expired job${removed === 1 ? '' : 's'} to Trash`);
+      .then((data) => {
+        if (data.demo) {
+          toast('Demo mode — the shortlist stays fresh automatically');
+          btn.disabled = false;
+          btn.textContent = label;
+          return;
+        }
+        toast(`🗑 Swept ${data.removed} expired job${data.removed === 1 ? '' : 's'} to Trash`);
         load(); // reflect the sweep; load() re-renders the current tab
       })
       .catch((e: Error) => {

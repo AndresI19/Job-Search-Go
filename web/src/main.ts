@@ -167,6 +167,11 @@ async function run() {
     const body = JSON.stringify(collect());
     const res = role === 'admin' ? await authFetch(api('run'), { method: 'POST', body }) : await fetch(api('run'), { method: 'POST', body });
     if (!res) throw new Error('Sign in as an admin to run a live search.');
+    if (res.status === 429) { // demo scan quota reached — informational, not an error
+      toast(await res.text());
+      showRun(false); reloadScry(); setRunButtons(false);
+      return;
+    }
     if (!res.ok) throw new Error(await res.text());
     openStream((await res.json()).id);
   } catch (e) { failRun(e.message); }
@@ -237,8 +242,9 @@ async function doRefresh() {
     const res = await authFetch(api('refresh'), { method: 'POST' });
     if (!res) throw new Error('Sign in as an admin to refresh.');
     if (!res.ok) throw new Error(await res.text());
-    const { removed } = await res.json();
-    toast(`🗑 Cleaned up <b>${removed}</b> old job${removed === 1 ? '' : 's'}`);
+    const data = await res.json();
+    if (data.demo) { toast('Demo mode — the shortlist stays fresh automatically'); if (b) { b.disabled = false; b.textContent = label; } return; }
+    toast(`🗑 Cleaned up <b>${data.removed}</b> old job${data.removed === 1 ? '' : 's'}`);
     reloadScry();
   } catch (e) { setStatus(e.message, true); if (b) { b.disabled = false; b.textContent = label; } }
 }
@@ -253,12 +259,16 @@ mountAccountFab({
   nudgeGuest: true,
   onUpgrade: () => mountGate({ onDone: () => location.reload() }),
 });
-onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; });
+// Disclose demo limits to non-admins: the search popover carries the "one scan per week,
+// sample results" note so a visitor knows the deal before launching a scan.
+function updateDemoUI() { const el = $('sp-demo'); if (el) el.hidden = role === 'admin'; }
+onIdentity(() => { role = isAdmin() ? 'admin' : 'guest'; updateDemoUI(); });
 
 // ---- boot: load the field/location catalogs, then show Scry ----
 fetch(api('config')).then((r) => r.json()).then((c) => {
   runCfg = c;
   role = isAdmin() ? 'admin' : 'guest';
+  updateDemoUI();
   fields = c.fields || [];
   selectedField = fields[0] ? fields[0].key : null;
   renderFields();
