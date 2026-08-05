@@ -66,14 +66,16 @@
 
   /* ===== Jobomancer clean shell ===== */
   /* padding-right reserves space so the header actions don't sit under the account FAB. */
-  .jb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 60px 8px 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
-  .jb-brand { display: flex; align-items: center; gap: 8px; font-weight: 820; letter-spacing: -.01em; font-size: 16px; color: inherit; text-decoration: none; border-radius: 9px; padding: 3px 7px; margin: -3px -1px; transition: background .14s, color .14s; }
-  .jb-brand:hover { background: color-mix(in srgb, var(--accent) 10%, transparent); color: var(--accent); }
-  .jb-brand:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .jb-top { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; padding: 8px 14px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 90%, transparent); backdrop-filter: blur(8px); position: sticky; top: 0; z-index: 20; }
+  /* Home nav mirrors the quiz page's pill: a rounded, bordered "← Home" at the left. */
+  .homelink { display: inline-flex; align-items: center; padding: 6px 12px; border-radius: 999px; border: 1px solid var(--line); background: var(--panel); box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); color: var(--ink); font-size: 12.5px; font-weight: 700; text-decoration: none; transition: transform .12s, border-color .12s, color .12s; }
+  .homelink:hover { transform: translateY(-1px); border-color: var(--accent); color: var(--accent); }
+  .homelink:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  /* Wordmark pushed to the right, its right edge aligned to the scry table's right edge
+     (the table is 92vw, capped at 1760px, centred — so its inset is 50vw − 880px on wide
+     screens). Clamped to clear the fixed account FAB (top-right) on narrower viewports. */
+  .jb-brand { display: flex; align-items: center; gap: 8px; font-weight: 820; letter-spacing: -.01em; font-size: 16px; margin-right: max(calc(50vw - 880px), 176px); }
   .jb-brand .zodiac { width: 22px; height: 22px; flex: none; }
-  /* The logo IS the home link (convention); the hint spells it out on hover/focus so it's discoverable. */
-  .jb-home { font-size: 11px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--accent); opacity: 0; max-width: 0; overflow: hidden; white-space: nowrap; transition: opacity .14s, max-width .14s; }
-  .jb-brand:hover .jb-home, .jb-brand:focus-visible .jb-home { opacity: 1; max-width: 70px; }
   /* Prominent, centered mode switch with per-room colour (Scry indigo, Conjure teal). */
   .jb-modes { margin: 0 auto; display: flex; background: var(--panel-2); border: 1px solid var(--line); border-radius: 12px; padding: 4px; gap: 3px; }
   .jb-modes button { border: 0; background: transparent; color: var(--muted); border-radius: 9px; padding: 9px 22px; font-weight: 800; font-size: 15px; cursor: pointer; display: flex; align-items: center; gap: 8px; }

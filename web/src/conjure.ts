@@ -191,6 +191,9 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         dt.effectAllowed = 'move';
         dt.setDragImage(BLANK_DRAG_IMG, 0, 0); // hide the native ghost
         card.classList.add('dragging');
+        // Light up the Trash tab for the whole drag so the destination is obvious BEFORE
+        // the cursor reaches it — not only once you're already hovering over it.
+        root.querySelector('.csubs button[data-sub="trashed"]')?.classList.add('armed');
         // Our own clone follows the cursor and is the thing we can recolour.
         dragGhost = card.cloneNode(true) as HTMLElement;
         dragGhost.classList.add('dragghost');
@@ -200,6 +203,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       });
       card.addEventListener('dragend', () => {
         card.classList.remove('dragging');
+        root.querySelector('.csubs button[data-sub="trashed"]')?.classList.remove('armed');
         dragGhost?.remove();
         dragGhost = null;
       });
