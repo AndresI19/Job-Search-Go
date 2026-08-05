@@ -8,7 +8,7 @@
 // (authFetch/api) rather than imported, so this module type-checks without the untyped
 // @platform/ui surface.
 import './conjure.css';
-import { fetchTemplates, fill, personalTokens, STARTERS, type Template } from './codex';
+import { fetchTemplates, fill, isPersonal, personalTokens, STARTERS, type Template } from './codex';
 
 // The api/applicator row (mirror of cmd/gui applyRow). A job is Discerned when it
 // carries a summary; Consecrated (saved, not yet summarized) when the summary is blank.
@@ -140,8 +140,12 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     // Fill from the job (COMPANY/POSITION/ROLE) AND from your Codex Personal Info fields
     // (NAME/LINKEDIN/EMAIL/…), so one click yields a ready-to-send letter.
     const params: Record<string, string> = { ...personalTokens(tpls), COMPANY: j.c, POSITION: j.t, ROLE: j.role || j.t };
-    // Your templates first; fall back to the generic starters so an empty Codex is still useful.
-    const pool = (tpls.length ? tpls : STARTERS).filter((t) => t.category !== 'Quick Info');
+    // The pool is your actual cover letters — NEVER the Personal Info fields (those only feed the
+    // {{TOKENS}} above via personalTokens). Fall back to the shipped starters when you have no
+    // letters yet, so the picker is never empty. (Filtering on the current isPersonal() rather than
+    // the old 'Quick Info' string was the regression: Personal Info leaked in as the only options.)
+    const own = tpls.filter((t) => !isPersonal(t));
+    const pool = own.length ? own : STARTERS;
     const pop = document.createElement('div');
     pop.className = 'letter-pop';
     pop.innerHTML = `<div class="lp-head">Copy for <b>${esc(j.c)}</b><span class="lp-sub">{{COMPANY}} · {{POSITION}} filled in</span></div>${
