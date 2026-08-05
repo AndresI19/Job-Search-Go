@@ -179,7 +179,7 @@
   .jb-actions { display: flex; align-items: center; gap: 8px; }
   .jb-actions .primary { font-size: 13px; padding: 8px 15px; }
   .jb-actions .primary:disabled, .jb-actions .rbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }
-  .jb-body { max-width: 1600px; margin: 0 auto; padding: 8px 12px 22px; }
+  .jb-body { max-width: 1600px; margin: 0 auto; padding: 4px 6px 11px; }
   .jb-body .status { min-height: 0; margin-bottom: 10px; }
   .jb-body .status:empty { margin: 0; }
   .jb-runbar { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; }
@@ -433,7 +433,7 @@
     .jb-util { order: 2; }
     .jb-modes { order: 3; width: 100%; margin-left: 0; justify-content: center; }
     .jb-modes button { flex: 1; justify-content: center; padding: 8px 10px; font-size: 14px; }
-    .jb-body { padding: 8px 10px 22px; }
+    .jb-body { padding: 4px 5px 11px; }
     /* Full-width, centred scan strip + popover on small screens. */
     .search-pop { right: 8px; left: 8px; width: auto; top: 58px; }
     .jbg { padding: 22px 18px 20px; }
