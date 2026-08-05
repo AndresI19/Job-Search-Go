@@ -89,7 +89,6 @@
 /* Discerned card: pay left, actions bottom-right */
 .cfoot { align-items: flex-end; }
 .cact { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; text-align: right; }
-.doneflag { font-size: 11px; color: #2f9e44; font-weight: 800; display: inline-flex; gap: 5px; align-items: center; }
 
 /* Discern loading screen — Conjure's own scan indicator. Teal/wand-themed (#0f9d8f, the
    Conjure accent) so it reads as distinct from Scry's navy live strip. */
@@ -123,6 +122,10 @@
 .lp-list { max-height: 300px; overflow-y: auto; padding: 6px; display: flex; flex-direction: column; gap: 2px; }
 .lp-item { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; width: 100%; border: 0; background: transparent; color: var(--ink); text-align: left; cursor: pointer; padding: 9px 10px; border-radius: 9px; font: inherit; }
 .lp-item:hover { background: color-mix(in srgb, var(--conjure) 14%, transparent); }
+/* Pinned letters (from the Codex library) sort to the top and wear a slight gold tint. */
+.lp-item.pinned { background: color-mix(in srgb, var(--accent) 10%, transparent); }
+.lp-item.pinned:hover { background: color-mix(in srgb, var(--accent) 18%, transparent); }
+.lp-item.pinned .lp-t { color: var(--accent2); font-weight: 700; }
 .lp-t { font-weight: 700; font-size: 13px; }
 .lp-cat { font-size: 10px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); white-space: nowrap; }
 .lp-empty { padding: 16px 14px; font-size: 12.5px; color: var(--muted); line-height: 1.5; }
