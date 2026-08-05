@@ -10,6 +10,7 @@ import '@fontsource/cormorant-garamond/500.css';
 import '@fontsource/cormorant-garamond/600.css';
 import '@fontsource/cormorant-garamond/700.css';
 import './app.css';
+import { iconWheel, bgWheel } from './wheels';
 import { mountScry, scryStreamStart, scryStreamRows } from './scry';
 import { mountConjure } from './conjure';
 import { mountCodex } from './codex';
@@ -20,6 +21,15 @@ const BASE = import.meta.env.BASE_URL;
 const api = (p) => BASE + 'api/' + p;
 const $ = (id) => document.getElementById(id);
 const esc = (s) => (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/"/g, '&quot;');
+
+// Zodiac wheels — the brand signature. In-page uses CSS-var gold (theme-adaptive); the
+// favicon is a standalone data-URI, so it carries hardcoded gold (browser tab has no CSS).
+$('jb-wheel').innerHTML = iconWheel();
+$('jb-bg').innerHTML = bgWheel();
+{
+  const fav = document.querySelector('link[rel="icon"]');
+  if (fav) fav.setAttribute('href', 'data:image/svg+xml,' + encodeURIComponent(iconWheel('#f0d38a', '#d9b45c')));
+}
 
 let mode = 'scry';                 // 'scry' | 'conjure'
 let role = 'guest';                // 'guest' | 'admin' — derived from identity
