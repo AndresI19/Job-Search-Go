@@ -479,8 +479,7 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		// downgrade hides a permission problem behind a $0 result. 401 nudges the UI
 		// to send a bearer token (or sign in).
 		if s.auth != nil && strings.EqualFold(req.Role, "admin") && !admin {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-			http.Error(w, "sign in as an admin to run a real search", http.StatusUnauthorized)
+			writeSignIn(w, "sign in as an admin to run a real search")
 			return
 		}
 		// A signed-in (non-admin) user gets the REAL pipeline too, not the mock. Guests stay on the
@@ -982,8 +981,7 @@ func (s *server) listings(w http.ResponseWriter, r *http.Request) {
 // that are definitively gone. Admin-only under configured auth (it mutates the
 // aggregate); a no-op without a DB.
 func (s *server) refresh(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	// Refresh sweeps the admin's OWN listings for dead apply URLs. A non-admin gets a friendly
@@ -1040,8 +1038,7 @@ func (s *server) saved(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"flags": flags, "columns": cols, "rows": table})
 	case http.MethodPut:
 		if userID == "" {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-			http.Error(w, "sign in to save listings to your account", http.StatusUnauthorized)
+			writeSignIn(w, "sign in to save listings to your account")
 			return
 		}
 		var body struct {
@@ -1079,8 +1076,7 @@ func (s *server) codex(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"templates": ts})
 	case http.MethodPost:
 		if userID == "" {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-			http.Error(w, "sign in to save templates to your account", http.StatusUnauthorized)
+			writeSignIn(w, "sign in to save templates to your account")
 			return
 		}
 		var t db.Template
@@ -1099,8 +1095,7 @@ func (s *server) codex(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, t)
 	case http.MethodDelete:
 		if userID == "" {
-			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-			http.Error(w, "sign in to manage templates", http.StatusUnauthorized)
+			writeSignIn(w, "sign in to manage templates")
 			return
 		}
 		if err := s.db.DeleteTemplate(r.Context(), userID, r.URL.Query().Get("id")); err != nil {
@@ -1198,8 +1193,7 @@ func (a *applicatorJob) snapshot() map[string]any {
 // that lacks a cached summary, storing each in job_summaries (so re-launch is
 // incremental). Admin-gated under configured auth — it spends Gemini tokens.
 func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
 	// Discern gives any SIGNED-IN user real Gemini summaries — it runs on the free-tier lite-flash
@@ -1296,13 +1290,11 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 // shortlist and appear in the Trash view. Requires an identity; MarkUnavailable never
 // touches a manifested (applied) job.
 func (s *server) trash(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.userID(r) == "" {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-		http.Error(w, "sign in to trash listings", http.StatusUnauthorized)
+	uid, ok := s.requireIdentity(w, r, "sign in to trash listings")
+	if !ok {
 		return
 	}
 	var body struct {
@@ -1315,7 +1307,6 @@ func (s *server) trash(w http.ResponseWriter, r *http.Request) {
 	// Manual trash can dismiss ANY card, including a manifested one: clear the caller's
 	// applied flag first (so the availability sweep's manifested-guard doesn't block it),
 	// then retire the listing. (The automatic Refresh sweep still spares manifested jobs.)
-	uid := s.userID(r)
 	for _, u := range body.URLs {
 		_ = s.db.SetSaved(r.Context(), uid, u, db.SavedFlags{Pinned: true, Applied: false})
 	}
@@ -1330,13 +1321,11 @@ func (s *server) trash(w http.ResponseWriter, r *http.Request) {
 // restore un-retires the given listings — bringing a trashed job back into Scry and the
 // shortlist. Requires an identity.
 func (s *server) restore(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodPost {
-		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	if !requireMethod(w, r, http.MethodPost) {
 		return
 	}
-	if s.userID(r) == "" {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-		http.Error(w, "sign in to restore listings", http.StatusUnauthorized)
+	uid, ok := s.requireIdentity(w, r, "sign in to restore listings")
+	if !ok {
 		return
 	}
 	var body struct {
@@ -1346,7 +1335,7 @@ func (s *server) restore(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	n, err := s.db.MarkAvailable(r.Context(), s.userID(r), body.URLs)
+	n, err := s.db.MarkAvailable(r.Context(), uid, body.URLs)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -1534,4 +1523,33 @@ func writeJSON(w http.ResponseWriter, v any) {
 
 func httpErr(w http.ResponseWriter, err error) {
 	http.Error(w, err.Error(), http.StatusBadRequest)
+}
+
+// requireMethod writes a 405 and returns false when the request method isn't want;
+// the caller returns immediately on false. Centralizes the top-of-handler method guard.
+func requireMethod(w http.ResponseWriter, r *http.Request, want string) bool {
+	if r.Method != want {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return false
+	}
+	return true
+}
+
+// writeSignIn issues a 401 with the Bearer challenge and a human-readable reason — the
+// single source of the realm string and the sign-in status for every identity-gated route.
+func writeSignIn(w http.ResponseWriter, reason string) {
+	w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+	http.Error(w, reason, http.StatusUnauthorized)
+}
+
+// requireIdentity resolves the caller's identity, writing a 401 (via writeSignIn) and
+// returning ok=false when there is none — so a handler can gate and capture the id in one
+// call instead of computing userID twice.
+func (s *server) requireIdentity(w http.ResponseWriter, r *http.Request, reason string) (string, bool) {
+	uid := s.userID(r)
+	if uid == "" {
+		writeSignIn(w, reason)
+		return "", false
+	}
+	return uid, true
 }
