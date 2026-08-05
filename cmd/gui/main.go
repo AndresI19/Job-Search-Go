@@ -485,7 +485,8 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		}
 		// A signed-in (non-admin) user gets the REAL pipeline too, not the mock. Guests stay on the
 		// mock. Admins are unbounded; everyone below admin is held to ONE scan per demoRunWindow.
-		signedIn := s.userID(r) != ""
+		runUser := s.userID(r) // the run's OWNER — scopes its persisted results
+		signedIn := runUser != ""
 		// Weekly scan quota: for a signed-in user this bounds their REAL Apify SPEND to one scan a
 		// week; for a guest it bounds mock load. Runs BEFORE the real/mock split. Disclosed to the
 		// visitor via the 429 message and the search popover.
@@ -521,7 +522,7 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			s.jobsMu.Lock()
 			s.jobs[id] = j
 			s.jobsMu.Unlock()
-			go s.runReal(j, fieldQuery(req.Field), p, count)
+			go s.runReal(j, runUser, fieldQuery(req.Field), p, count)
 		} else {
 			header, data, lerr := s.loadCache()
 			if lerr != nil {
@@ -641,14 +642,14 @@ func (s *server) runStream(w http.ResponseWriter, r *http.Request) {
 // body with ingest → verify calls that drive the same jobState fields.
 func (s *server) runMock(j *jobState, rows [][]string) {
 	n := len(rows)
-	// For live streaming the mock replays the rows the grid will actually show — the
-	// persisted aggregate (the same set api/results serves) — capped to the animated
-	// count. Empty (and harmless) when there's no DB, so local dev still just animates.
+	// The mock streams the CANNED demo cache (never any real user's results): a guest with no
+	// identity sees a fixed sample, capped to the animated count and marked new so it pins to top.
+	demo := s.cachedDTOs()
 	var streamSrc []resultDTO
-	if agg, err := s.db.Listings(context.Background(), db.Aggregate); err == nil {
-		for i := 0; i < len(agg) && i < n; i++ {
-			streamSrc = append(streamSrc, toResultDTO(agg[i], true))
-		}
+	for i := 0; i < len(demo) && i < n; i++ {
+		d := demo[i]
+		d.New = true
+		streamSrc = append(streamSrc, d)
 	}
 	// Pace each phase to roughly a few seconds regardless of n, so a large suite
 	// still animates rather than crawling.
@@ -728,7 +729,7 @@ func (s *server) scrapeSource(ctx context.Context, src source.Source, q watchlis
 	return src.Normalize(raw), nil
 }
 
-func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count int) {
+func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile, count int) {
 	ctx := context.Background()
 	fail := func(msg string) {
 		j.mu.Lock()
@@ -815,8 +816,8 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 	// aggregate, so the accumulated table holds everything found and the client filters
 	// it later. Best-effort: a persistence error must not fail an otherwise-good run.
 	if s.db.Enabled() {
-		if runID, rerr := s.db.StartRun(ctx, keywords, count); rerr == nil {
-			if uerr := s.db.UpsertResults(ctx, runID, results); uerr != nil {
+		if runID, rerr := s.db.StartRun(ctx, userID, keywords, count); rerr == nil {
+			if uerr := s.db.UpsertResults(ctx, userID, runID, results); uerr != nil {
 				fmt.Fprintf(os.Stderr, "db: upsert run results failed: %v\n", uerr)
 			}
 		} else {
@@ -953,13 +954,25 @@ func (s *server) listings(w http.ResponseWriter, r *http.Request) {
 	if strings.EqualFold(r.URL.Query().Get("view"), "new") {
 		view = db.New
 	}
-	results, err := s.db.Listings(r.Context(), view)
-	if err != nil {
-		httpErr(w, err)
-		return
+	// Scope to the caller. A guest (no identity) gets the canned demo cache, never the per-user pool.
+	userID := s.userID(r)
+	var header []string
+	var data [][]string
+	if userID == "" {
+		var lerr error
+		if header, data, lerr = s.loadCache(); lerr != nil {
+			httpErr(w, lerr)
+			return
+		}
+	} else {
+		results, err := s.db.Listings(r.Context(), userID, view)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		header = output.Header()
+		data = output.Rows(results)
 	}
-	header := output.Header()
-	data := output.Rows(results)
 	s.setLast(header, data)
 	cols, table := report.Preview(header, data, report.ConfigFrom(profile.Default()), time.Now())
 	writeJSON(w, map[string]any{"columns": cols, "rows": table, "kept": len(data), "total": len(data)})
@@ -973,19 +986,20 @@ func (s *server) refresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Refresh mutates the SHARED aggregate (the availability flag everyone sees), so it
-	// stays owner-only. A non-admin gets a friendly no-op rather than a 401 — the button
-	// exists for them in the demo, it just reports that upkeep is handled automatically.
+	// Refresh sweeps the admin's OWN listings for dead apply URLs. A non-admin gets a friendly
+	// no-op rather than a 401 — the button exists for them in the demo, it just reports that upkeep
+	// is handled automatically.
 	if s.auth != nil && !s.auth.IsAdmin(r) {
 		writeJSON(w, map[string]any{"checked": 0, "removed": 0, "demo": true})
 		return
 	}
-	cands, err := s.db.AvailabilityCandidates(r.Context())
+	userID := s.userID(r)
+	cands, err := s.db.AvailabilityCandidates(r.Context(), userID)
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
-	removed, err := s.db.MarkUnavailable(r.Context(), deadURLs(r.Context(), cands))
+	removed, err := s.db.MarkUnavailable(r.Context(), userID, deadURLs(r.Context(), cands))
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -1305,7 +1319,7 @@ func (s *server) trash(w http.ResponseWriter, r *http.Request) {
 	for _, u := range body.URLs {
 		_ = s.db.SetSaved(r.Context(), uid, u, db.SavedFlags{Pinned: true, Applied: false})
 	}
-	n, err := s.db.MarkUnavailable(r.Context(), body.URLs)
+	n, err := s.db.MarkUnavailable(r.Context(), uid, body.URLs)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -1332,7 +1346,7 @@ func (s *server) restore(w http.ResponseWriter, r *http.Request) {
 		httpErr(w, err)
 		return
 	}
-	n, err := s.db.MarkAvailable(r.Context(), body.URLs)
+	n, err := s.db.MarkAvailable(r.Context(), s.userID(r), body.URLs)
 	if err != nil {
 		httpErr(w, err)
 		return

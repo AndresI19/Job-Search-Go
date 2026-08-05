@@ -75,20 +75,31 @@ func (d *DB) Close() {
 const schemaSQL = `
 CREATE TABLE IF NOT EXISTS runs (
   id         BIGSERIAL PRIMARY KEY,
+  user_id    TEXT NOT NULL DEFAULT '', -- the identity that launched the run
   started_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   field      TEXT NOT NULL DEFAULT '',
   count      INT  NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS listings (
   id          BIGSERIAL PRIMARY KEY,
-  url         TEXT UNIQUE NOT NULL,   -- dedup key
-  result      JSONB NOT NULL,         -- a marshalled model.Result
+  user_id     TEXT NOT NULL DEFAULT '', -- OWNER: results are private to the identity that ran them
+  url         TEXT NOT NULL,
+  result      JSONB NOT NULL,           -- a marshalled model.Result
   first_seen  TIMESTAMPTZ NOT NULL DEFAULT now(),
   last_seen   TIMESTAMPTZ NOT NULL DEFAULT now(),
   first_run   BIGINT,
   last_run_id BIGINT,
   available   BOOL NOT NULL DEFAULT true
 );
+-- Idempotent migration for installs created before per-user scoping: add the owner column and
+-- retire the old global url-unique constraint (its rows keep user_id='' and are served to no one).
+-- ORDER MATTERS: the columns must exist before the (user_id, url) index that keys on them, so the
+-- ALTERs run FIRST — on a fresh install they are no-ops, on an old one they add user_id in time.
+ALTER TABLE runs     ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE listings ADD COLUMN IF NOT EXISTS user_id TEXT NOT NULL DEFAULT '';
+ALTER TABLE listings DROP CONSTRAINT IF EXISTS listings_url_key;
+-- Dedup key is (owner, url): the same posting can exist once PER user, never shared across them.
+CREATE UNIQUE INDEX IF NOT EXISTS listings_user_url ON listings (user_id, url);
 -- Saved is keyed by URL, not a listing FK, so a pin survives even if the listing
 -- is not (yet) in the aggregate (e.g. pinned off the mock preview).
 CREATE TABLE IF NOT EXISTS saved (
@@ -137,12 +148,12 @@ func (d *DB) Migrate(ctx context.Context) error {
 
 // StartRun records a scan and returns its id, which stamps the rows it touches
 // (so "New" can select the latest run's listings).
-func (d *DB) StartRun(ctx context.Context, field string, count int) (int64, error) {
+func (d *DB) StartRun(ctx context.Context, userID, field string, count int) (int64, error) {
 	if !d.Enabled() {
 		return 0, nil
 	}
 	var id int64
-	err := d.pool.QueryRow(ctx, `INSERT INTO runs(field, count) VALUES ($1, $2) RETURNING id`, field, count).Scan(&id)
+	err := d.pool.QueryRow(ctx, `INSERT INTO runs(user_id, field, count) VALUES ($1, $2, $3) RETURNING id`, userID, field, count).Scan(&id)
 	return id, err
 }
 
@@ -150,7 +161,7 @@ func (d *DB) StartRun(ctx context.Context, field string, count int) (int64, erro
 // (first_seen/first_run set); a seen URL refreshes its result, last_seen and
 // last_run_id, and is re-marked available (it came back in this scan). Best-effort
 // per the caller — a persistence failure must not fail the run.
-func (d *DB) UpsertResults(ctx context.Context, runID int64, results []model.Result) error {
+func (d *DB) UpsertResults(ctx context.Context, userID string, runID int64, results []model.Result) error {
 	if !d.Enabled() {
 		return nil
 	}
@@ -169,14 +180,14 @@ func (d *DB) UpsertResults(ctx context.Context, runID int64, results []model.Res
 			continue
 		}
 		batch.Queue(`
-			INSERT INTO listings (url, result, first_run, last_run_id, last_seen, available)
-			VALUES ($1, $2, $3, $3, now(), true)
-			ON CONFLICT (url) DO UPDATE SET
+			INSERT INTO listings (user_id, url, result, first_run, last_run_id, last_seen, available)
+			VALUES ($1, $2, $3, $4, $4, now(), true)
+			ON CONFLICT (user_id, url) DO UPDATE SET
 				result = EXCLUDED.result,
 				last_run_id = EXCLUDED.last_run_id,
 				last_seen = now(),
 				available = true`,
-			r.Listing.URL, payload, runID)
+			userID, r.Listing.URL, payload, runID)
 	}
 	if batch.Len() == 0 {
 		return nil
@@ -194,21 +205,21 @@ const (
 
 // Listings returns the persisted results for a view, newest-seen first, excluding
 // soft-deleted (unavailable) rows. Reconstructs model.Result from the stored JSONB.
-func (d *DB) Listings(ctx context.Context, view View) ([]model.Result, error) {
+func (d *DB) Listings(ctx context.Context, userID string, view View) ([]model.Result, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
-	q := `SELECT result FROM listings WHERE available`
+	q := `SELECT result FROM listings WHERE available AND user_id = $1`
 	if view == New {
 		// Genuinely NEW: listings FIRST discovered in the latest run — the jobs this
 		// search added to the aggregate, not the ones it merely re-saw. Keys on
 		// first_run (set once on insert, never touched on conflict), not last_run_id
 		// (which every re-seen listing also carries). No runs yet ⇒ MAX is NULL ⇒ no
 		// rows, which is correct.
-		q += ` AND first_run = (SELECT MAX(id) FROM runs)`
+		q += ` AND first_run = (SELECT MAX(id) FROM runs WHERE user_id = $1)`
 	}
 	q += ` ORDER BY last_seen DESC`
-	rows, err := d.pool.Query(ctx, q)
+	rows, err := d.pool.Query(ctx, q, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -233,7 +244,7 @@ func (d *DB) Listings(ctx context.Context, view View) ([]model.Result, error) {
 type Candidate struct{ URL, ApplyURL string }
 
 // AvailabilityCandidates lists currently-available rows for the Refresh sweep.
-func (d *DB) AvailabilityCandidates(ctx context.Context) ([]Candidate, error) {
+func (d *DB) AvailabilityCandidates(ctx context.Context, userID string) ([]Candidate, error) {
 	if !d.Enabled() {
 		return nil, nil
 	}
@@ -241,7 +252,7 @@ func (d *DB) AvailabilityCandidates(ctx context.Context) ([]Candidate, error) {
 	// ExternalApplyURL falls back to the canonical URL.
 	rows, err := d.pool.Query(ctx, `
 		SELECT url, COALESCE(NULLIF(result->'Listing'->>'ExternalApplyURL', ''), url)
-		FROM listings WHERE available`)
+		FROM listings WHERE available AND user_id = $1`, userID)
 	if err != nil {
 		return nil, err
 	}
@@ -259,25 +270,27 @@ func (d *DB) AvailabilityCandidates(ctx context.Context) ([]Candidate, error) {
 
 // MarkUnavailable soft-deletes rows by URL (Refresh found them dead). Soft, so a
 // Saved reference to the URL still resolves.
-func (d *DB) MarkUnavailable(ctx context.Context, urls []string) (int64, error) {
+func (d *DB) MarkUnavailable(ctx context.Context, userID string, urls []string) (int64, error) {
 	if !d.Enabled() || len(urls) == 0 {
 		return 0, nil
 	}
-	// Never retire a manifested (applied) job — its listing must stay so the Manifested
-	// stage keeps it. Everything else is fair game.
+	// Scoped to the owner: a user's Trash (or an admin's Refresh) only retires THEIR own listing
+	// rows. Never retire a manifested (applied) job — its listing must stay so the Manifested stage
+	// keeps it. Everything else is fair game.
 	tag, err := d.pool.Exec(ctx, `
 		UPDATE listings SET available = false
-		WHERE url = ANY($1) AND url NOT IN (SELECT url FROM saved WHERE applied)`, urls)
+		WHERE user_id = $1 AND url = ANY($2)
+		  AND url NOT IN (SELECT url FROM saved WHERE applied AND user_id = $1)`, userID, urls)
 	return tag.RowsAffected(), err
 }
 
 // MarkAvailable un-retires listings — restoring a job from Trash back into Scry and the
 // shortlist.
-func (d *DB) MarkAvailable(ctx context.Context, urls []string) (int64, error) {
+func (d *DB) MarkAvailable(ctx context.Context, userID string, urls []string) (int64, error) {
 	if !d.Enabled() || len(urls) == 0 {
 		return 0, nil
 	}
-	tag, err := d.pool.Exec(ctx, `UPDATE listings SET available = true WHERE url = ANY($1)`, urls)
+	tag, err := d.pool.Exec(ctx, `UPDATE listings SET available = true WHERE user_id = $1 AND url = ANY($2)`, userID, urls)
 	return tag.RowsAffected(), err
 }
 
@@ -334,7 +347,7 @@ func (d *DB) SavedListings(ctx context.Context, userID string) ([]SavedListing, 
 	rows, err := d.pool.Query(ctx, `
 		SELECT l.result, s.pinned, s.applied, l.available
 		FROM saved s
-		JOIN listings l ON l.url = s.url
+		JOIN listings l ON l.url = s.url AND l.user_id = s.user_id
 		WHERE s.user_id = $1 AND (s.pinned OR s.applied)
 		ORDER BY l.last_seen DESC`, userID)
 	if err != nil {
@@ -366,7 +379,7 @@ func (d *DB) SavedNotApplied(ctx context.Context, userID string) ([]SavedListing
 	rows, err := d.pool.Query(ctx, `
 		SELECT l.result, s.pinned, s.applied, l.available
 		FROM saved s
-		JOIN listings l ON l.url = s.url
+		JOIN listings l ON l.url = s.url AND l.user_id = s.user_id
 		WHERE s.user_id = $1 AND s.pinned AND NOT s.applied AND l.available
 		ORDER BY l.last_seen DESC`, userID)
 	if err != nil {

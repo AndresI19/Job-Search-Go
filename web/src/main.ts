@@ -315,6 +315,8 @@ onIdentity(() => {
   role = isAdmin() ? 'admin' : isSignedIn() ? 'user' : 'guest';
   updateDemoUI();
   refreshTabCounts();
+  reloadScry(); // identity changed (sign in / out / switch) — refetch Scry under the NEW owner so the
+  //             previous identity's results never linger on the grid.
   // On sign-in, carry any guest-made Codex templates up to the account.
   if (isSignedIn()) migrateGuestTemplates({ api, authFetch, isSignedIn }).then((n) => { if (n) toast(`✨ Synced ${n} template${n === 1 ? '' : 's'} to your account`); });
 });

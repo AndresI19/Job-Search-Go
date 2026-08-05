@@ -2,6 +2,8 @@ package main
 
 import (
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/AndresI19/Job-Search-Go/internal/db"
@@ -90,12 +92,20 @@ func toResultDTO(r model.Result, isNew bool) resultDTO {
 // Read-only; empty (not an error) without persistence, since every db method is
 // nil-safe.
 func (s *server) results(w http.ResponseWriter, r *http.Request) {
-	all, err := s.db.Listings(r.Context(), db.Aggregate)
+	userID := s.userID(r)
+	if userID == "" {
+		// Guest (no identity): the canned demo sample — never the per-user pool, so one user's
+		// real search never leaks to the next visitor.
+		demo := s.cachedDTOs()
+		writeJSON(w, map[string]any{"results": demo, "total": len(demo)})
+		return
+	}
+	all, err := s.db.Listings(r.Context(), userID, db.Aggregate)
 	if err != nil {
 		httpErr(w, err)
 		return
 	}
-	fresh, err := s.db.Listings(r.Context(), db.New)
+	fresh, err := s.db.Listings(r.Context(), userID, db.New)
 	if err != nil {
 		httpErr(w, err)
 		return
@@ -110,4 +120,65 @@ func (s *server) results(w http.ResponseWriter, r *http.Request) {
 		out[i] = toResultDTO(res, isNew)
 	}
 	writeJSON(w, map[string]any{"results": out, "total": len(out)})
+}
+
+// cachedDTOs renders the canned demo cache (results.cache.csv) as typed Scry rows — what a GUEST
+// (no identity) is shown, a fixed sample that is never any real user's persisted results. Columns
+// follow output.Header(); blank or unknown cells fall back to zero values.
+func (s *server) cachedDTOs() []resultDTO {
+	header, data, err := s.loadCache()
+	if err != nil {
+		return nil
+	}
+	col := make(map[string]int, len(header))
+	for i, h := range header {
+		col[h] = i
+	}
+	get := func(row []string, name string) string {
+		if i, ok := col[name]; ok && i < len(row) {
+			return row[i]
+		}
+		return ""
+	}
+	num := func(row []string, name string) int { n, _ := strconv.Atoi(get(row, name)); return n }
+	out := make([]resultDTO, 0, len(data))
+	for _, row := range data {
+		posted := ""
+		if p := get(row, "posted"); p != "" {
+			if t, e := time.Parse("2006-01-02", p); e == nil {
+				posted = t.UTC().Format(time.RFC3339)
+			}
+		}
+		applicants := -1
+		if get(row, "applicants") != "" {
+			applicants = num(row, "applicants")
+		}
+		score, _ := strconv.ParseFloat(get(row, "score"), 64)
+		d := resultDTO{
+			URL:          get(row, "url"),
+			Title:        get(row, "title"),
+			Company:      get(row, "company"),
+			Location:     get(row, "location"),
+			Remote:       strings.EqualFold(get(row, "remote"), "true"),
+			Posted:       posted,
+			Applicants:   applicants,
+			SalaryMin:    num(row, "salary_min"),
+			SalaryMax:    num(row, "salary_max"),
+			SalaryEstMin: num(row, "salary_est_min"),
+			SalaryEstMax: num(row, "salary_est_max"),
+			Score:        score,
+			Confidence:   get(row, "confidence"),
+			Reasoning:    get(row, "reasoning"),
+		}
+		switch {
+		case d.SalaryMin > 0 || d.SalaryMax > 0:
+			d.PayState = "posted"
+		case d.SalaryEstMin > 0 || d.SalaryEstMax > 0:
+			d.PayState = "estimated"
+		default:
+			d.PayState = "none"
+		}
+		out = append(out, d)
+	}
+	return out
 }
