@@ -28,12 +28,13 @@ function hashColor(label: string): string {
     h ^= label.charCodeAt(i);
     h = Math.imul(h, 16777619) >>> 0;
   }
-  return `hsl(${h % 360},52%,84%)`;
+  // Muted mid-tone (was 52% / 84% — too bright a pastel on the dark grid).
+  return `hsl(${h % 360},38%,66%)`;
 }
 
-// Company-tier fills — the same encoding the legacy table used, now driven by the
-// server-classified companyTier field.
-const TIER_FILL: Record<string, string> = { f500: '#FFE699', software: '#9BC2E6', startup: '#D9C2E9' };
+// Company-tier fills — muted mid-tones (deepened from the old bright pastels), driven by the
+// server-classified companyTier field. Dark cell ink stays legible.
+const TIER_FILL: Record<string, string> = { f500: '#d1bb6a', software: '#83a4c6', startup: '#b498cd' };
 const TIER_LABEL: Record<string, string> = { f500: 'Fortune 500', software: 'Software', startup: 'Startup' };
 
 const ROLE_RULES: Array<[string, string[]]> = [
@@ -250,12 +251,16 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
       : `<div class="scry-pager"><span>${total} listing${total === 1 ? '' : 's'}</span></div>`;
 
     root.innerHTML = `
-      <div class="scry-ctx"><b>${total}</b> verified job${total === 1 ? '' : 's'}${fresh.length ? ` · <span class="newpill">✨ ${fresh.length} new</span>` : ''}
+      <div class="scry-ctx">
+        <span class="ctx-status"><b>${total}</b> verified job${total === 1 ? '' : 's'}${fresh.length ? `<span class="newpill">✨ ${fresh.length} new</span>` : ''}</span>
         <input class="scry-search" id="scry-search" type="search" placeholder="Search title, company, location…  ( / )" value="${esc(st.q)}" aria-label="Search jobs" autocomplete="off">
-        <button class="scry-run primary" id="ctx-newsearch">▶&nbsp; New search</button>
-        <button class="scry-run rbtn" id="ctx-refresh" title="Re-check listings; retire any no longer available">↻&nbsp; Refresh</button>
-        <button class="filt-open" id="scry-filters">⏷ Filters${fc ? ` <span class="filt-badge">${fc}</span>` : ''}</button>
-        ${anyFilter() ? '<button class="clearf" id="scry-clear">Clear all</button>' : ''}</div>
+        <span class="ctx-actions">
+          ${anyFilter() ? '<button class="clearf" id="scry-clear">Clear all</button>' : ''}
+          <button class="filt-open" id="scry-filters">⏷ Filters${fc ? ` <span class="filt-badge">${fc}</span>` : ''}</button>
+          <button class="scry-run rbtn" id="ctx-refresh" title="Re-check listings; retire any no longer available">↻&nbsp; Refresh</button>
+          <button class="scry-run primary" id="ctx-newsearch">▶&nbsp; New search</button>
+        </span>
+      </div>
       <div class="scry-wrap"><table class="scry"><thead><tr>${headHTML()}</tr></thead><tbody>${body}</tbody></table></div>
       ${pager}`;
 
