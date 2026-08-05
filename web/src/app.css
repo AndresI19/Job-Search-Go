@@ -100,6 +100,8 @@
   .jbg-step.s1 { background: #1e3a8a; } .jbg-step.s2 { background: #b45309; } .jbg-step.s3 { background: #0f9d8f; }
   .jbg-go { width: 100%; border: 0; border-radius: 12px; padding: 12px; font-weight: 850; font-size: 14px; cursor: pointer; color: #fff; background: linear-gradient(180deg, var(--accent), color-mix(in srgb, var(--accent) 74%, #000)); }
   .jbg-go:hover { filter: brightness(1.05); }
+  .jbg-tip { margin: 12px 0 0; text-align: center; font-size: 11.5px; color: var(--muted); }
+  .jbg-tip kbd { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; background: var(--panel-2); border: 1px solid var(--line); border-bottom-width: 2px; border-radius: 5px; padding: 1px 5px; color: var(--ink); }
   @media (prefers-reduced-motion: no-preference) { .jbg { animation: jbgin .22s ease-out; } @keyframes jbgin { from { opacity: 0; transform: translateY(8px) scale(.98); } } }
   .jb-brand .zodiac { width: 22px; height: 22px; flex: none; }
   /* Prominent, centered mode switch with per-room colour (Scry indigo, Conjure teal). */
@@ -349,4 +351,28 @@
     background: var(--ink); color: var(--panel); padding: 6px 10px; border-radius: 8px;
     font-size: 12px; line-height: 1.45; box-shadow: var(--shadow-lg);
     white-space: pre-line; word-break: break-word; pointer-events: none;
+  }
+
+  /* ===== Accessibility: a visible keyboard focus ring on anything interactive that
+     doesn't already define its own. Mouse clicks stay ring-free (:focus-visible). ===== */
+  button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visible,
+  select:focus-visible, [tabindex]:focus-visible {
+    outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 6px;
+  }
+
+  /* ===== Responsive: keep the header and rooms usable down to phone widths. ===== */
+  @media (max-width: 680px) {
+    /* The wordmark's desktop right-alignment (clears the fixed FAB) would overflow a phone;
+       drop the big margin and let the header wrap into rows instead. */
+    .jb-brand { margin-right: 0; font-size: 15px; }
+    .jb-modes { margin: 4px 0 0; order: 3; width: 100%; justify-content: center; }
+    .jb-modes button { flex: 1; justify-content: center; padding: 8px 10px; font-size: 14px; }
+    .jb-top { padding: 8px 10px; gap: 8px; }
+    .jb-body { padding: 8px 10px 22px; }
+    /* Full-width, centred scan strip + popover on small screens. */
+    .search-pop { right: 8px; left: 8px; width: auto; top: 58px; }
+    .jbg { padding: 22px 18px 20px; }
+    .jbg-room { grid-template-columns: 30px 1fr; grid-template-rows: auto auto; }
+    .jbg-room .jbg-emoji { grid-row: 1 / 3; }
+    .jbg-room > b, .jbg-room > span:last-child { grid-column: 2; }
   }

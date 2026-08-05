@@ -182,3 +182,10 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry-colpop .row2 { display: flex; justify-content: space-between; gap: 8px; margin-top: 10px; border-top: 1px solid var(--line); padding-top: 9px; }
 .scry-colpop .row2 button { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 7px; padding: 5px 11px; font-weight: 700; font-size: 12px; cursor: pointer; }
 .scry-colpop .row2 .app { background: var(--accent); color: var(--accent-ink, #fff); border-color: transparent; }
+
+/* Phone: the search box takes its own full-width row; the grid uses more of the viewport. */
+@media (max-width: 680px) {
+  .scry-search { max-width: none; flex-basis: 100%; order: 5; }
+  .scry-wrap { width: 96vw; }
+  .scry-ctx { margin: 2px 2px 8px; gap: 8px; }
+}

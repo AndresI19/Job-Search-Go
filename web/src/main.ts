@@ -31,7 +31,11 @@ function toast(html) { const t = $('toast'); if (!t) return; t.innerHTML = html;
 // ---- mode switch (Scry / Conjure) ----
 function setMode(m) {
   mode = m;
-  for (const b of document.querySelectorAll('#jb-modes button')) b.classList.toggle('on', b.dataset.mode === m);
+  for (const b of document.querySelectorAll('#jb-modes button')) {
+    const on = b.dataset.mode === m;
+    b.classList.toggle('on', on);
+    if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
+  }
   $('search-pop').hidden = true;
   if (m === 'scry') showScry(); else if (m === 'conjure') showConjure(); else showCodex();
   refreshTabCounts();
@@ -315,6 +319,7 @@ function openGuide() {
       <div class="jbg-room codex"><span class="jbg-emoji">📖</span><b>Codex</b><span>Reusable cover letters, snippets, and quick links — with <code>{{tokens}}</code> filled in when you copy.</span></div>
     </div>
     <div class="jbg-legend"><b>The funnel:</b> <span class="jbg-step s1">★ Consecrate</span> → <span class="jbg-step s2">✨ Discern</span> → <span class="jbg-step s3">✓ Manifest</span></div>
+    <p class="jbg-tip">Shortcuts: <kbd>g</kbd> then <kbd>s</kbd>/<kbd>c</kbd>/<kbd>x</kbd> to switch rooms · <kbd>/</kbd> to search · <kbd>?</kbd> for this guide</p>
     <button class="jbg-go">Got it — start scrying</button>
   </div></div>`;
   document.body.appendChild(host);
@@ -328,5 +333,21 @@ function openGuide() {
 }
 $('jb-help')?.addEventListener('click', openGuide);
 try { if (!localStorage.getItem(GUIDE_SEEN)) openGuide(); } catch { /* private mode — just skip the first-run guide */ }
+
+// ---- keyboard shortcuts: ? opens the guide, g then s/c/x switches rooms ----
+let gPending = 0;
+document.addEventListener('keydown', (e) => {
+  const t = e.target;
+  if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; // don't hijack typing
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === '?') { e.preventDefault(); openGuide(); return; }
+  if (document.getElementById('jb-guide')) return; // the guide modal owns the keyboard
+  if (e.key === 'g') { gPending = Date.now(); return; }
+  if (gPending && Date.now() - gPending < 1200) {
+    const room = { s: 'scry', c: 'conjure', x: 'codex' }[e.key];
+    if (room) { setMode(room); }
+    gPending = 0;
+  }
+});
 
 showScry();
