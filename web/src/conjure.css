@@ -95,14 +95,20 @@
    Conjure accent) so it reads as distinct from Scry's navy live strip. */
 .cload { display: flex; align-items: center; justify-content: center; min-height: 46vh; padding: 30px 12px; }
 .cload-panel { max-width: 460px; width: 100%; text-align: center; background: var(--panel); border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); padding: 32px 28px; }
-.cload-orb { width: 60px; height: 60px; margin: 0 auto 16px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 27px; background: color-mix(in srgb, #0f9d8f 13%, var(--panel)); position: relative; }
-.cload-pulse { position: absolute; inset: 0; border-radius: 999px; border: 2px solid #0f9d8f; animation: cloadpulse 1.3s ease-out infinite; }
-@keyframes cloadpulse { 0% { transform: scale(1); opacity: .7; } 100% { transform: scale(1.55); opacity: 0; } }
-@media (prefers-reduced-motion: reduce) { .cload-pulse { animation: none; opacity: .35; } }
+.cload-orb { width: 60px; height: 60px; margin: 6px auto 22px; border-radius: 999px; display: flex; align-items: center; justify-content: center; font-size: 27px; background: radial-gradient(circle at 42% 40%, color-mix(in srgb, var(--conjure) 22%, var(--panel)), var(--panel)); position: relative; box-shadow: 0 0 20px color-mix(in srgb, var(--conjure) 30%, transparent); }
+.cload-pulse { position: absolute; inset: 0; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--conjure) 45%, transparent); animation: cloadpulse 2s ease-out infinite; }
+/* Two planets orbiting the orb at different radii / speeds — a little solar system. */
+.cload-orb::before, .cload-orb::after { content: ""; position: absolute; top: 50%; left: 50%; border-radius: 50%; }
+.cload-orb::before { width: 7px; height: 7px; margin: -3.5px; background: var(--conjure); box-shadow: 0 0 7px var(--conjure); animation: cloadorbit 2.8s linear infinite; }
+.cload-orb::after { width: 5px; height: 5px; margin: -2.5px; background: var(--scry); box-shadow: 0 0 6px var(--scry); animation: cloadorbit2 4.2s linear infinite; }
+@keyframes cloadpulse { 0% { transform: scale(1); opacity: .6; } 100% { transform: scale(1.5); opacity: 0; } }
+@keyframes cloadorbit { from { transform: rotate(0) translateX(40px); } to { transform: rotate(360deg) translateX(40px); } }
+@keyframes cloadorbit2 { from { transform: rotate(150deg) translateX(50px); } to { transform: rotate(510deg) translateX(50px); } }
+@media (prefers-reduced-motion: reduce) { .cload-pulse { animation: none; opacity: .35; } .cload-orb::before, .cload-orb::after { display: none; } }
 .cload-title { font-weight: 820; font-size: 17px; color: var(--ink); letter-spacing: -.01em; }
 .cload-sub { font-size: 12.5px; color: var(--muted); margin: 8px auto 18px; max-width: 42ch; line-height: 1.5; }
 .cload-track { height: 8px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
-.cload-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, #0f9d8f, var(--accent2)); transition: width .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.cload-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--conjure), var(--accent2)); box-shadow: 0 0 8px color-mix(in srgb, var(--conjure) 45%, transparent); transition: width .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .cload-count { margin-top: 10px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .cload-count b { color: var(--ink); font-weight: 800; }
 

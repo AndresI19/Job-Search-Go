@@ -2,14 +2,16 @@
    --panel-2, --ink, --muted, --line) loaded by @platform/ui; defines only the pay /
    recency data-encoding tints, which are fixed data colours, not brand accents. */
 :root {
-  --pay-light: #E2EFDA;
-  --pay-strong: #A9D08E;
-  --fresh: #B7E39B;
-  --recent: #FFEB9C;
-  --aging: #FFC97A;
-  --stale: #FFB3AD;
-  --est-light: #DAE8FC; /* estimated pay — distinct shades of blue, never the posted green */
-  --est-strong: #A9C7EA;
+  /* Data tints — desaturated ("dusty") so they read as encoding, not bright candy pastels,
+     while staying light enough for the dark cell ink. Hue still signals fresh/aging/est. */
+  --pay-light: #d7ddd0;
+  --pay-strong: #b7c7a7;
+  --fresh: #bcd0ae;
+  --recent: #e6dcbb;
+  --aging: #e2cba3;
+  --stale: #ddc2be;
+  --est-light: #d5dce6; /* estimated pay — distinct dusty blues, never the posted green */
+  --est-strong: #bfccdc;
 }
 
 .scry-ctx {
@@ -123,7 +125,7 @@ table.scry tbody tr:hover { background: color-mix(in srgb, var(--accent) 5%, tra
 .scry .starbtn.on { color: #f0a500; }
 /* Broader Filters menu button + badge, and the pager */
 /* New search + Refresh live on the context bar (compact). */
-.scry-run { padding: 5px 12px; font-size: 12px; border-radius: 8px; }
+.scry-run { padding: 8px 15px; font-size: 13px; border-radius: 9px; }
 .scry-ctx .scry-run + .scry-run { margin-left: 2px; }
 /* Global free-text search — filters the grid by title / company / location. */
 .scry-search { flex: 1 1 220px; max-width: 340px; border: 1px solid var(--line); background: var(--panel); color: var(--ink); border-radius: 8px; padding: 6px 11px; font: 500 12.5px/1.2 inherit; }
