@@ -17,7 +17,8 @@
 
 .cgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(360px, 100%), 1fr)); gap: 14px; }
 .cempty { color: var(--muted); font-size: 13px; padding: 20px 2px; }
-.ccard { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 16px 17px; display: flex; flex-direction: column; gap: 12px; position: relative; transition: box-shadow .16s, transform .16s; }
+.ccard { background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--conjure, #0f9d8f); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 16px 17px; display: flex; flex-direction: column; gap: 12px; position: relative; transition: box-shadow .16s, transform .16s; }
+.ctitle { font-family: var(--serif, inherit); font-size: 17px; letter-spacing: .01em; }
 .ccard:hover { box-shadow: var(--shadow-lg, 0 16px 46px rgba(20,22,40,.17)); transform: translateY(-2px); }
 .ccard.unprepped { border-style: dashed; background: var(--panel-2); }
 .chead { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }

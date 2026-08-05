@@ -63,10 +63,10 @@
 
 /* Cards */
 .cx-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(340px, 100%), 1fr)); gap: 14px; }
-.cx-card { background: var(--panel); border: 1px solid var(--line); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 15px 16px; display: flex; flex-direction: column; gap: 11px; }
+.cx-card { background: var(--panel); border: 1px solid var(--line); border-top: 2px solid var(--cx); border-radius: 15px; box-shadow: var(--shadow, 0 1px 3px rgba(20,22,40,.09)); padding: 15px 16px; display: flex; flex-direction: column; gap: 11px; }
 .cx-card.starter { border-style: dashed; background: var(--panel-2); }
 .cx-card-h { display: flex; justify-content: space-between; gap: 10px; align-items: flex-start; }
-.cx-title { font-weight: 800; font-size: 15px; line-height: 1.25; letter-spacing: -.01em; }
+.cx-title { font-family: var(--serif, inherit); font-weight: 600; font-size: 17px; line-height: 1.2; letter-spacing: .01em; }
 .cx-meta { display: flex; align-items: center; gap: 7px; flex-wrap: wrap; margin-top: 5px; }
 .cx-cat { font-size: 10.5px; font-weight: 800; letter-spacing: .04em; text-transform: uppercase; color: var(--cx); background: color-mix(in srgb, var(--cx) 13%, transparent); border-radius: 6px; padding: 2px 8px; }
 .cx-badge { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); border: 1px solid var(--line); border-radius: 6px; padding: 2px 7px; }

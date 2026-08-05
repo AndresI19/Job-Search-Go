@@ -10,6 +10,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@fontsource/cormorant-garamond": "^5.3.0",
     "@platform/ui": "file:web/vendor/project-platform/portfolio-home/packages/platform-ui"
   },
   "devDependencies": {

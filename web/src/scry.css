@@ -44,6 +44,7 @@
 .scry-wrap {
   overflow-x: auto;
   border: 1px solid var(--line);
+  border-top: 2px solid var(--scry, var(--accent));
   border-radius: 14px;
   background: var(--panel);
   box-shadow: var(--shadow, 0 1px 3px rgba(20, 22, 40, .09));
