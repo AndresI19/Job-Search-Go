@@ -7,9 +7,9 @@ import (
 )
 
 // MockJudge is a $0, no-network Judge: it scores a listing heuristically from its
-// own signals and never calls Claude. It exists to exercise the whole ingest →
+// own signals and never calls a live judge. It exists to exercise the whole ingest →
 // verify pipeline end to end for free (select it with JUDGE_BACKEND=mock), so the
-// real Apify+Claude wiring can be proven before spending a cent on tokens.
+// real Apify+judge wiring can be proven before spending a cent on tokens.
 type MockJudge struct{}
 
 // Evaluate returns a verdict from cheap signals: an ATS requisition match reads
