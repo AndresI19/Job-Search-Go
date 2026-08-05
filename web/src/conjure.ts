@@ -35,6 +35,7 @@ export interface ApplyJob {
 interface ConjureDeps {
   api: (p: string) => string;
   authFetch: (url: string, init?: RequestInit) => Promise<Response | null>;
+  onShortlistChange?: () => void; // manifest/trash/restore changed the shortlist — refresh the tab badge
 }
 
 type PayState = 'posted' | 'estimated' | 'none';
@@ -305,6 +306,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         jobs = jobs.filter((x) => x.u !== u);
         if (j) manifested.unshift(j);
         render();
+        deps.onShortlistChange?.();
         toast('✨ Manifested — moved to Manifested');
       })
       .catch(() => toast('Could not mark manifested'));
@@ -327,6 +329,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         trashed = trashed.filter((x) => x.u !== u);
         if (j && !jobs.some((x) => x.u === u)) jobs.unshift(j);
         render();
+        deps.onShortlistChange?.();
         toast('↩ Restored to your shortlist');
       })
       .catch(() => toast('Could not restore'));
@@ -346,6 +349,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         manifested = manifested.filter((x) => x.u !== u);
         if (j && !trashed.some((x) => x.u === u)) trashed.unshift(j);
         render();
+        deps.onShortlistChange?.();
         toast('🗑 Trashed');
       })
       .catch(() => toast('Could not trash'));
@@ -367,6 +371,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
         manifested = manifested.filter((x) => x.u !== u);
         if (j) jobs.unshift(j);
         render();
+        deps.onShortlistChange?.();
         toast('Un-manifested — back in your shortlist');
       })
       .catch(() => toast('Could not un-manifest'));
