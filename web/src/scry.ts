@@ -464,7 +464,13 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
 
   root.innerHTML = `<div class="scry-ctx">Loading verified jobs…</div>`;
   Promise.all([
-    fetch(api('results')).then((r) => (r.ok ? (r.json() as Promise<ResultsResponse>) : Promise.reject(new Error('results ' + r.status)))),
+    // Send the identity's token so the server scopes results to THEM; a guest's authFetch is null,
+    // so it falls back to the tokenless fetch, which the server answers with the canned demo —
+    // never another user's runs.
+    deps
+      .authFetch(api('results'))
+      .then((r) => r ?? fetch(api('results')))
+      .then((r) => (r.ok ? (r.json() as Promise<ResultsResponse>) : Promise.reject(new Error('results ' + r.status)))),
     deps.authFetch(api('saved')).then((r) => (r && r.ok ? r.json() : null)).catch(() => null),
   ])
     .then(([data, saved]) => {

@@ -55,10 +55,10 @@ func TestOpenDisabledWithoutURL(t *testing.T) {
 	if err := d.Migrate(context.Background()); err != nil {
 		t.Fatalf("Migrate no-op: %v", err)
 	}
-	if err := d.UpsertResults(context.Background(), 0, []model.Result{listing("u", "t")}); err != nil {
+	if err := d.UpsertResults(context.Background(), "u1", 0, []model.Result{listing("u", "t")}); err != nil {
 		t.Fatalf("UpsertResults no-op: %v", err)
 	}
-	got, err := d.Listings(context.Background(), Aggregate)
+	got, err := d.Listings(context.Background(), "u1", Aggregate)
 	if err != nil || got != nil {
 		t.Fatalf("Listings no-op: %v %v", got, err)
 	}
@@ -72,10 +72,10 @@ func TestUpsertDedupAndViews(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 
-	run1, _ := d.StartRun(ctx, "software", 2)
-	must(t, d.UpsertResults(ctx, run1, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
+	run1, _ := d.StartRun(ctx, "u1", "software", 2)
+	must(t, d.UpsertResults(ctx, "u1", run1, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
 
-	agg, err := d.Listings(ctx, Aggregate)
+	agg, err := d.Listings(ctx, "u1", Aggregate)
 	must(t, err)
 	if len(agg) != 2 {
 		t.Fatalf("run1 aggregate = %d, want 2", len(agg))
@@ -83,10 +83,10 @@ func TestUpsertDedupAndViews(t *testing.T) {
 
 	// Second run re-sees A (updated title) and adds C. Aggregate dedupes to 3, not 4.
 	time.Sleep(5 * time.Millisecond)
-	run2, _ := d.StartRun(ctx, "software", 2)
-	must(t, d.UpsertResults(ctx, run2, []model.Result{listing("https://a", "A-updated"), listing("https://c", "C")}))
+	run2, _ := d.StartRun(ctx, "u1", "software", 2)
+	must(t, d.UpsertResults(ctx, "u1", run2, []model.Result{listing("https://a", "A-updated"), listing("https://c", "C")}))
 
-	agg, err = d.Listings(ctx, Aggregate)
+	agg, err = d.Listings(ctx, "u1", Aggregate)
 	must(t, err)
 	if len(agg) != 3 {
 		t.Fatalf("aggregate after run2 = %d, want 3 (deduped on url)", len(agg))
@@ -94,7 +94,7 @@ func TestUpsertDedupAndViews(t *testing.T) {
 
 	// "New" = only what run2 FIRST discovered: C. A was re-seen, not newly added, so
 	// it must NOT appear in New even though the latest run touched it.
-	fresh, err := d.Listings(ctx, New)
+	fresh, err := d.Listings(ctx, "u1", New)
 	must(t, err)
 	if len(fresh) != 1 || fresh[0].Listing.URL != "https://c" {
 		t.Fatalf("new = %v, want exactly [https://c] (only the newly-added listing)", fresh)
@@ -102,7 +102,7 @@ func TestUpsertDedupAndViews(t *testing.T) {
 
 	// The re-seen A still refreshed its stored result in the aggregate (visible there,
 	// just not counted as "new").
-	all, _ := d.Listings(ctx, Aggregate)
+	all, _ := d.Listings(ctx, "u1", Aggregate)
 	var sawUpdated bool
 	for _, r := range all {
 		if r.Listing.URL == "https://a" && r.Listing.Title == "A-updated" {
@@ -117,22 +117,22 @@ func TestUpsertDedupAndViews(t *testing.T) {
 func TestMarkUnavailableHidesFromViews(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
-	run, _ := d.StartRun(ctx, "software", 2)
-	must(t, d.UpsertResults(ctx, run, []model.Result{listing("https://live", "L"), listing("https://dead", "D")}))
+	run, _ := d.StartRun(ctx, "u1", "software", 2)
+	must(t, d.UpsertResults(ctx, "u1", run, []model.Result{listing("https://live", "L"), listing("https://dead", "D")}))
 
-	n, err := d.MarkUnavailable(ctx, []string{"https://dead"})
+	n, err := d.MarkUnavailable(ctx, "u1", []string{"https://dead"})
 	must(t, err)
 	if n != 1 {
 		t.Fatalf("marked %d, want 1", n)
 	}
-	agg, _ := d.Listings(ctx, Aggregate)
+	agg, _ := d.Listings(ctx, "u1", Aggregate)
 	if len(agg) != 1 || agg[0].Listing.URL != "https://live" {
 		t.Fatalf("unavailable row still visible: %+v", agg)
 	}
 	// A re-seen dead URL comes back available (it reappeared in a scan).
-	run2, _ := d.StartRun(ctx, "software", 1)
-	must(t, d.UpsertResults(ctx, run2, []model.Result{listing("https://dead", "D")}))
-	agg, _ = d.Listings(ctx, Aggregate)
+	run2, _ := d.StartRun(ctx, "u1", "software", 1)
+	must(t, d.UpsertResults(ctx, "u1", run2, []model.Result{listing("https://dead", "D")}))
+	agg, _ = d.Listings(ctx, "u1", Aggregate)
 	if len(agg) != 2 {
 		t.Fatalf("re-seen listing not restored to available: %d", len(agg))
 	}
@@ -160,13 +160,13 @@ func TestUpsertDedupsTrackingParams(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	base := "https://www.linkedin.com/jobs/view/swe-ii-at-kensho-4403143638"
-	run, _ := d.StartRun(ctx, "software", 3)
-	must(t, d.UpsertResults(ctx, run, []model.Result{
+	run, _ := d.StartRun(ctx, "u1", "software", 3)
+	must(t, d.UpsertResults(ctx, "u1", run, []model.Result{
 		listing(base+"?refId=A&trackingId=1", "SWE II"),
 		listing(base+"?refId=B&trackingId=2", "SWE II"),
 		listing(base+"?position=9&refId=C&trackingId=3", "SWE II"),
 	}))
-	agg, err := d.Listings(ctx, Aggregate)
+	agg, err := d.Listings(ctx, "u1", Aggregate)
 	must(t, err)
 	if len(agg) != 1 {
 		t.Fatalf("tracking-param variants = %d rows, want 1 (deduped on canonical URL)", len(agg))
@@ -208,23 +208,24 @@ func TestSavedListingsSurviveRefreshSweep(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	const user = "user-123"
-	run, _ := d.StartRun(ctx, "software", 2)
-	must(t, d.UpsertResults(ctx, run, []model.Result{
+	run, _ := d.StartRun(ctx, user, "software", 2)
+	must(t, d.UpsertResults(ctx, user, run, []model.Result{
 		listing("https://live", "Live Job"),
 		listing("https://dead", "Dead Job"),
 	}))
-	// The client saves on the canonical URL — the same key listings dedups on — so the
-	// join lines up. Pin the live one, mark the other applied.
+	// The client saves on the canonical URL — the same key listings dedups on — so the join lines
+	// up. Both are pinned: a PINNED saved job is sweepable (only APPLIED/manifested jobs are spared),
+	// and the point here is that a swept-but-saved job survives in the Saved tab, flagged unavailable.
 	must(t, d.SetSaved(ctx, user, "https://live", SavedFlags{Pinned: true}))
-	must(t, d.SetSaved(ctx, user, "https://dead", SavedFlags{Applied: true}))
+	must(t, d.SetSaved(ctx, user, "https://dead", SavedFlags{Pinned: true}))
 	// A pin whose posting was never persisted (saved off the mock preview) has no stored
 	// row; it stays a browser-local snapshot and must NOT surface here.
 	must(t, d.SetSaved(ctx, user, "https://never-persisted", SavedFlags{Pinned: true}))
 	// The Refresh sweep retires the dead posting — it leaves the aggregate…
-	if _, err := d.MarkUnavailable(ctx, []string{"https://dead"}); err != nil {
+	if _, err := d.MarkUnavailable(ctx, user, []string{"https://dead"}); err != nil {
 		t.Fatal(err)
 	}
-	if agg, _ := d.Listings(ctx, Aggregate); len(agg) != 1 {
+	if agg, _ := d.Listings(ctx, user, Aggregate); len(agg) != 1 {
 		t.Fatalf("aggregate should hide the retired job, got %d rows", len(agg))
 	}
 
@@ -241,7 +242,7 @@ func TestSavedListingsSurviveRefreshSweep(t *testing.T) {
 	if live := byURL["https://live"]; !live.Available || !live.Pinned {
 		t.Fatalf("live saved job wrong: %+v", live)
 	}
-	if dead := byURL["https://dead"]; dead.Available || !dead.Applied || dead.Result.Listing.Title != "Dead Job" {
+	if dead := byURL["https://dead"]; dead.Available || !dead.Pinned || dead.Result.Listing.Title != "Dead Job" {
 		t.Fatalf("retired saved job must return Available=false with intact row data: %+v", dead)
 	}
 	// Saved is per-identity: another user sees none of this.
@@ -256,8 +257,8 @@ func TestApplicatorSummariesAndBacklog(t *testing.T) {
 	d := testDB(t)
 	ctx := context.Background()
 	const user = "user-app"
-	run, _ := d.StartRun(ctx, "software", 2)
-	must(t, d.UpsertResults(ctx, run, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
+	run, _ := d.StartRun(ctx, user, "software", 2)
+	must(t, d.UpsertResults(ctx, user, run, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
 	must(t, d.SetSaved(ctx, user, "https://a", SavedFlags{Pinned: true}))
 	must(t, d.SetSaved(ctx, user, "https://b", SavedFlags{Pinned: true, Applied: true})) // applied ⇒ off the backlog
 
@@ -287,6 +288,37 @@ func TestApplicatorSummariesAndBacklog(t *testing.T) {
 	got, _ = d.SummariesFor(ctx, []string{"https://a"})
 	if s := got["https://a"]; s.Employment != "permanent" || s.Required != "3y" {
 		t.Fatalf("upsert did not overwrite: %+v", s)
+	}
+}
+
+// TestListingsScopedPerUser pins the cache-deception fix's core guarantee: listings are private to
+// their owner — one identity's runs never surface for another identity or a guest, and the same URL
+// under two owners is two independent rows (dedup is per-owner, not global).
+func TestListingsScopedPerUser(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	runA, _ := d.StartRun(ctx, "alice", "software", 1)
+	must(t, d.UpsertResults(ctx, "alice", runA, []model.Result{listing("https://a", "Alice job")}))
+	runB, _ := d.StartRun(ctx, "bob", "software", 1)
+	must(t, d.UpsertResults(ctx, "bob", runB, []model.Result{listing("https://b", "Bob job")}))
+
+	if a, _ := d.Listings(ctx, "alice", Aggregate); len(a) != 1 || a[0].Listing.URL != "https://a" {
+		t.Fatalf("alice sees %v, want only her own [https://a]", a)
+	}
+	if b, _ := d.Listings(ctx, "bob", Aggregate); len(b) != 1 || b[0].Listing.URL != "https://b" {
+		t.Fatalf("bob sees %v, want only his own [https://b]", b)
+	}
+	// A guest (empty identity) sees NEITHER — no real user's runs leak to the tokenless caller.
+	if guest, _ := d.Listings(ctx, "", Aggregate); len(guest) != 0 {
+		t.Fatalf("guest sees %v, want none (this is the leak the fix closes)", guest)
+	}
+	// bob re-scanning a URL alice also has must NOT clobber alice's row — the dedup is per-owner.
+	must(t, d.UpsertResults(ctx, "bob", runB, []model.Result{listing("https://a", "Bob's copy of A")}))
+	if b, _ := d.Listings(ctx, "bob", Aggregate); len(b) != 2 {
+		t.Fatalf("bob should have his own 2 rows (b + his copy of a), got %d", len(b))
+	}
+	if a, _ := d.Listings(ctx, "alice", Aggregate); len(a) != 1 || a[0].Listing.Title != "Alice job" {
+		t.Fatalf("alice's row was clobbered by bob's same-url insert: %v", a)
 	}
 }
 
