@@ -59,9 +59,14 @@
 /* Drag any card onto the Trash tab to dismiss it. */
 .ccard[draggable] { cursor: grab; }
 .ccard.dragging { opacity: .45; }
-/* The Trash tab keeps only a subtle cue — the tile floats over it, so a red tab is
-   hidden. The red feedback lives on the dragged tile clone (.dragghost.overtrash). */
-.csubs button[data-sub="trashed"].drop { outline: 2px dashed var(--accent); outline-offset: -2px; color: var(--accent); }
+/* While ANY card is being dragged, the Trash tab lights up as the destination — a calm
+   red cue with a gentle pulse — so it's clear where to drop before the cursor arrives. */
+.csubs button[data-sub="trashed"].armed { color: #d0433b; outline: 2px dashed color-mix(in srgb, #d0433b 55%, transparent); outline-offset: -2px; background: color-mix(in srgb, #d0433b 9%, transparent); animation: trasharm 1.1s ease-in-out infinite; }
+@keyframes trasharm { 0%, 100% { box-shadow: 0 0 0 0 color-mix(in srgb, #d0433b 34%, transparent); } 50% { box-shadow: 0 0 0 5px color-mix(in srgb, #d0433b 0%, transparent); } }
+@media (prefers-reduced-motion: reduce) { .csubs button[data-sub="trashed"].armed { animation: none; } }
+/* Actively hovered: escalate to a solid red fill. The dragged tile clone also turns red
+   (.dragghost.overtrash) — that clone floats over the tab, so this is the tab's own state. */
+.csubs button[data-sub="trashed"].drop { color: #d0433b; outline: 2px solid #d0433b; outline-offset: -2px; background: color-mix(in srgb, #d0433b 18%, transparent); }
 /* Cursor-following clone of the dragged card (native ghost is suppressed). */
 .dragghost { position: fixed; left: 0; top: 0; z-index: 90; pointer-events: none; margin: 0; max-width: 360px; opacity: .92; transform: rotate(-1.5deg); box-shadow: 0 18px 44px rgba(20,22,40,.28); }
 /* Over the Trash tab, the TILE itself turns red so the intent is unmistakable. */
