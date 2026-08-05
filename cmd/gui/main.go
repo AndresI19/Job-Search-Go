@@ -112,6 +112,7 @@ func main() {
 	mux.HandleFunc(base+"api/preview", s.preview)
 	mux.HandleFunc(base+"api/download", s.download)
 	mux.HandleFunc(base+"api/run", s.run)
+	mux.HandleFunc(base+"api/run/stream", s.runStream)
 	mux.HandleFunc(base+"api/export", s.export)
 	mux.HandleFunc(base+"api/import", s.importResults)
 	mux.HandleFunc(base+"api/listings", s.listings)
@@ -325,7 +326,8 @@ type jobState struct {
 	rateLimit   float64 // Apify budget cap, USD
 	errMsg      string
 	header      []string
-	rows        [][]string // the run's result rows, populated on completion
+	rows        [][]string  // the run's result rows, populated on completion
+	stream      []resultDTO // verified rows appended AS they complete, for live SSE streaming
 	cfg         report.Config
 }
 
@@ -515,12 +517,100 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// runStream is the live-scan Server-Sent Events feed for one run. It emits `rows`
+// events (newly-verified listings, as DTOs) the instant each is appended, plus a
+// `progress` event with the phase/counts/spend, and a terminal `done` or `error`.
+// Unauthenticated like the GET snapshot it complements — the run id is the capability
+// — so the browser can read it with a plain fetch (no EventSource auth limitation).
+func (s *server) runStream(w http.ResponseWriter, r *http.Request) {
+	s.jobsMu.Lock()
+	j := s.jobs[r.URL.Query().Get("id")]
+	s.jobsMu.Unlock()
+	if j == nil {
+		http.Error(w, "no such job", http.StatusNotFound)
+		return
+	}
+	fl, ok := w.(http.Flusher)
+	if !ok { // no streaming support behind this writer: degrade to a single snapshot
+		writeJSON(w, j.snapshot())
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no") // tell nginx not to buffer the stream
+	fl.Flush()
+
+	emit := func(event string, data any) bool {
+		b, err := json.Marshal(data)
+		if err != nil {
+			return false
+		}
+		if _, err := fmt.Fprintf(w, "event: %s\ndata: %s\n\n", event, b); err != nil {
+			return false
+		}
+		fl.Flush()
+		return true
+	}
+
+	ctx := r.Context()
+	ticker := time.NewTicker(150 * time.Millisecond)
+	defer ticker.Stop()
+	cursor := 0 // how many streamed rows the client already has
+	for {
+		select {
+		case <-ctx.Done(): // the browser navigated away / aborted
+			return
+		case <-ticker.C:
+		}
+		j.mu.Lock()
+		status, errMsg := j.status, j.errMsg
+		prog := map[string]any{
+			"phase": j.phase, "status": status, "spends": j.spends,
+			"apify":  map[string]int{"done": j.apifyDone, "total": j.apifyTotal},
+			"verify": map[string]int{"done": j.verifyDone, "total": j.verifyTotal},
+			"rate":   map[string]float64{"used": j.rateUsed, "limit": j.rateLimit},
+		}
+		var fresh []resultDTO
+		if cursor < len(j.stream) {
+			fresh = append(fresh, j.stream[cursor:]...)
+			cursor = len(j.stream)
+		}
+		shown := len(j.rows)
+		j.mu.Unlock()
+
+		if len(fresh) > 0 && !emit("rows", fresh) {
+			return
+		}
+		if !emit("progress", prog) {
+			return
+		}
+		if status == "done" {
+			emit("done", map[string]any{"scanned": prog["verify"].(map[string]int)["total"], "shown": shown})
+			return
+		}
+		if status == "error" {
+			emit("error", map[string]any{"message": errMsg})
+			return
+		}
+	}
+}
+
 // runMock simulates a run against a $0 mock: it replays the suite's cached rows
 // with realistic timing so the Apify-load and post-process bars animate, without
 // touching Apify or Claude. Swapping in the real pipeline means replacing this
 // body with ingest → verify calls that drive the same jobState fields.
 func (s *server) runMock(j *jobState, rows [][]string) {
 	n := len(rows)
+	// For live streaming the mock replays the rows the grid will actually show — the
+	// persisted aggregate (the same set api/results serves) — capped to the animated
+	// count. Empty (and harmless) when there's no DB, so local dev still just animates.
+	var streamSrc []resultDTO
+	if agg, err := s.db.Listings(context.Background(), db.Aggregate); err == nil {
+		for i := 0; i < len(agg) && i < n; i++ {
+			streamSrc = append(streamSrc, toResultDTO(agg[i], true))
+		}
+	}
 	// Pace each phase to roughly a few seconds regardless of n, so a large suite
 	// still animates rather than crawling.
 	pause := 350 * time.Millisecond
@@ -546,6 +636,9 @@ func (s *server) runMock(j *jobState, rows [][]string) {
 		time.Sleep(pause)
 		j.mu.Lock()
 		j.verifyDone = i
+		if i-1 < len(streamSrc) { // stream this row as it "verifies"
+			j.stream = append(j.stream, streamSrc[i-1])
+		}
 		j.mu.Unlock()
 	}
 	j.mu.Lock()
@@ -668,10 +761,14 @@ func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count 
 	j.mu.Unlock()
 
 	var done int64
-	results := pipeline.Verify(ctx, listings, s.resolver, s.judge, score.DefaultWeights(), 8, nil, func() {
+	results := pipeline.Verify(ctx, listings, s.resolver, s.judge, score.DefaultWeights(), 8, nil, func(res model.Result) {
 		n := atomic.AddInt64(&done, 1)
 		j.mu.Lock()
 		j.verifyDone = int(n)
+		// Stream the verified row the instant it's ready (marked new — it's arriving now).
+		// The full verified set persists to the aggregate below; the client reloads the
+		// authoritative set on done, so streaming the unfiltered result here is correct.
+		j.stream = append(j.stream, toResultDTO(res, true))
 		j.mu.Unlock()
 	})
 

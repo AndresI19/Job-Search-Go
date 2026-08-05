@@ -80,6 +80,7 @@ interface Col {
 
 interface State {
   rows: Result[];
+  streaming: boolean; // a live scan owns the grid — the initial fetch must not clobber it
   pinned: Set<string>; // consecrated URLs
   sortIdx: number;
   sortDir: 1 | -1;
@@ -97,9 +98,22 @@ interface State {
 
 const PAGE_SIZE = 50;
 
+// Live-scan bridge: the host shell (main.ts) pushes rows here as the SSE feed delivers
+// them. It points at the CURRENT mount's state, so a remount simply re-registers — last
+// mount wins, which is always the visible one.
+let liveGrid: { start: () => void; add: (rows: Result[]) => void } | null = null;
+/** Clear the grid and enter streaming mode — call when a scan starts. */
+export function scryStreamStart(): void {
+  liveGrid?.start();
+}
+/** Append newly-verified rows to the streaming grid (de-duped by URL). */
+export function scryStreamRows(rows: Result[]): void {
+  liveGrid?.add(rows);
+}
+
 export function mountScry(root: HTMLElement, deps: ScryDeps): void {
   const st: State = {
-    rows: [], pinned: new Set(), sortIdx: -1, sortDir: -1, page: 0, pay: 'all', newOnly: false,
+    rows: [], streaming: false, pinned: new Set(), sortIdx: -1, sortDir: -1, page: 0, pay: 'all', newOnly: false,
     roles: new Set(), locs: new Set(), remote: new Set(), payLo: null, payHi: null, scoreMin: null, daysMax: null,
   };
 
@@ -392,15 +406,35 @@ export function mountScry(root: HTMLElement, deps: ScryDeps): void {
     root.addEventListener('mouseout', () => { clearTimeout(tipTimer); tip.style.display = 'none'; });
   }
 
+  // Register this mount as the live-stream target (last mount wins). start() clears the
+  // grid for an incoming scan; add() appends verified rows as they arrive, sorted and
+  // grouped by the same render() the grid always uses.
+  liveGrid = {
+    start: () => {
+      st.streaming = true;
+      st.rows = [];
+      st.page = 0;
+      st.sortIdx = COLS.length - 1;
+      st.sortDir = -1;
+      render();
+    },
+    add: (incoming) => {
+      const seen = new Set(st.rows.map((r) => r.url));
+      for (const r of incoming) if (!seen.has(r.url)) { st.rows.push(r); seen.add(r.url); }
+      render();
+    },
+  };
+
   root.innerHTML = `<div class="scry-ctx">Loading verified jobs…</div>`;
   Promise.all([
     fetch(api('results')).then((r) => (r.ok ? (r.json() as Promise<ResultsResponse>) : Promise.reject(new Error('results ' + r.status)))),
     deps.authFetch(api('saved')).then((r) => (r && r.ok ? r.json() : null)).catch(() => null),
   ])
     .then(([data, saved]) => {
-      st.rows = data.results || [];
       const flags = saved && (saved as { flags?: Record<string, { pinned?: boolean }> }).flags;
       if (flags) for (const [u, f] of Object.entries(flags)) if (f.pinned) st.pinned.add(u);
+      if (st.streaming) { render(); return; } // a live scan owns the rows — don't overwrite
+      st.rows = data.results || [];
       st.sortIdx = COLS.length - 1; // Score, descending
       st.sortDir = -1;
       render();
