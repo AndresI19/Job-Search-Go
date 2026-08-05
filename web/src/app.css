@@ -83,6 +83,7 @@
   .jb-modes button:hover:not(.on) { color: var(--ink); }
   .jb-modes button[data-mode="scry"].on { background: var(--accent); color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, var(--accent) 30%, transparent); }
   .jb-modes button[data-mode="conjure"].on { background: #0f9d8f; color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, #0f9d8f 30%, transparent); }
+  .jb-modes button[data-mode="codex"].on { background: #b45309; color: #fff; box-shadow: 0 2px 8px color-mix(in srgb, #b45309 30%, transparent); }
   .jb-actions { display: flex; align-items: center; gap: 8px; }
   .jb-actions .primary { font-size: 13px; padding: 8px 15px; }
   .jb-actions .primary:disabled, .jb-actions .rbtn:disabled { opacity: .5; cursor: not-allowed; transform: none; box-shadow: none; }

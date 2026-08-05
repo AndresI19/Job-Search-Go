@@ -119,6 +119,7 @@ func main() {
 	mux.HandleFunc(base+"api/results", s.results) // typed domain-model contract (Jobomancer Scry grid)
 	mux.HandleFunc(base+"api/refresh", s.refresh)
 	mux.HandleFunc(base+"api/saved", s.saved)
+	mux.HandleFunc(base+"api/codex", s.codex)
 	mux.HandleFunc(base+"api/applicator/launch", s.applicatorLaunch)
 	mux.HandleFunc(base+"api/applicator/status", s.applicatorStatus)
 	mux.HandleFunc(base+"api/applicator/trash", s.trash)
@@ -999,6 +1000,56 @@ func (s *server) saved(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := s.db.SetSaved(r.Context(), userID, body.URL, db.SavedFlags{Pinned: body.Pinned, Applied: body.Applied}); err != nil {
+			httpErr(w, err)
+			return
+		}
+		writeJSON(w, map[string]bool{"ok": true})
+	default:
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+	}
+}
+
+// codex is the Codex template store: a user's reusable copy-paste application text.
+// GET lists the caller's templates (empty for a guest/no-DB — guests keep theirs in
+// localStorage); POST upserts one; DELETE removes one. Writes require a signed-in
+// identity, mirroring api/saved.
+func (s *server) codex(w http.ResponseWriter, r *http.Request) {
+	userID := s.userID(r)
+	switch r.Method {
+	case http.MethodGet:
+		ts, err := s.db.Templates(r.Context(), userID)
+		if err != nil {
+			httpErr(w, err)
+			return
+		}
+		writeJSON(w, map[string]any{"templates": ts})
+	case http.MethodPost:
+		if userID == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+			http.Error(w, "sign in to save templates to your account", http.StatusUnauthorized)
+			return
+		}
+		var t db.Template
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
+			httpErr(w, err)
+			return
+		}
+		if strings.TrimSpace(t.ID) == "" {
+			http.Error(w, "template id required", http.StatusBadRequest)
+			return
+		}
+		if err := s.db.UpsertTemplate(r.Context(), userID, t); err != nil {
+			httpErr(w, err)
+			return
+		}
+		writeJSON(w, t)
+	case http.MethodDelete:
+		if userID == "" {
+			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
+			http.Error(w, "sign in to manage templates", http.StatusUnauthorized)
+			return
+		}
+		if err := s.db.DeleteTemplate(r.Context(), userID, r.URL.Query().Get("id")); err != nil {
 			httpErr(w, err)
 			return
 		}

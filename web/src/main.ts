@@ -8,8 +8,9 @@ import '@platform/ui/gate.css';
 import './app.css';
 import { mountScry, scryStreamStart, scryStreamRows } from './scry';
 import { mountConjure } from './conjure';
+import { mountCodex } from './codex';
 import { mountAccountFab, mountGate } from '@platform/ui/gate';
-import { authFetch, isAdmin, onIdentity } from '@platform/ui/auth';
+import { authFetch, isAdmin, isSignedIn, onIdentity } from '@platform/ui/auth';
 
 const BASE = import.meta.env.BASE_URL;
 const api = (p) => BASE + 'api/' + p;
@@ -32,19 +33,28 @@ function setMode(m) {
   mode = m;
   for (const b of document.querySelectorAll('#jb-modes button')) b.classList.toggle('on', b.dataset.mode === m);
   $('search-pop').hidden = true;
-  if (m === 'scry') showScry(); else showConjure();
+  if (m === 'scry') showScry(); else if (m === 'conjure') showConjure(); else showCodex();
 }
 function showScry() {
   $('runview').hidden = true;
   $('scry-root').hidden = false;
   $('conjure-root').hidden = true;
+  $('codex-root').hidden = true;
   if (!scryMounted) { mountScry($('scry-root'), { authFetch, onNewSearch: openSearchAt, onRefresh: doRefresh }); scryMounted = true; }
 }
 function showConjure() {
   $('runview').hidden = true;
   $('scry-root').hidden = true;
   $('conjure-root').hidden = false;
+  $('codex-root').hidden = true;
   mountConjure($('conjure-root'), { api, authFetch }); // re-fetch each show (reflect fresh Consecrates)
+}
+function showCodex() {
+  $('runview').hidden = true;
+  $('scry-root').hidden = true;
+  $('conjure-root').hidden = true;
+  $('codex-root').hidden = false;
+  mountCodex($('codex-root'), { api, authFetch, isSignedIn }); // re-fetch each show
 }
 function reloadScry() { scryMounted = false; if (mode === 'scry') showScry(); }
 document.querySelectorAll('#jb-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
