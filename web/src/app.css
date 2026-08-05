@@ -16,8 +16,8 @@
     --wash-1: 12%; --wash-2: 10%; --wash-3: 8%;
     --shadow: 0 1px 2px rgba(0,0,0,.35), 0 10px 30px rgba(0,0,0,.42);
     --shadow-lg: 0 6px 22px rgba(0,0,0,.42), 0 22px 58px rgba(0,0,0,.52);
-    /* Room jewel-tones */
-    --scry: #8f83f2; --conjure: #40c2ab; --codex: #dd9a4e;
+    /* Room jewel-tones — deep, not pastel (amethyst / verdigris / burnished amber). */
+    --scry: #6d5cc7; --conjure: #2f9e8c; --codex: #c5852f;
     --serif: "Cormorant Garamond", "Iowan Old Style", Palatino, Georgia, serif;
     --starfield:
       radial-gradient(1px 1px at 18% 22%, rgba(255,255,255,.45), transparent),
@@ -119,9 +119,14 @@
   .jb-name { font-family: var(--serif); font-size: 25px; font-weight: 600; letter-spacing: .015em; line-height: 1; color: var(--ink); }
   .jb-name b { color: var(--accent); font-weight: 600; }
   .jb-eyebrow { font-size: 9.5px; letter-spacing: .3em; text-transform: uppercase; color: var(--muted); margin-top: 4px; }
-  /* Utility icons (theme / help / home) grouped at the right, before the FAB. */
-  .jb-util { margin-left: auto; display: flex; align-items: center; gap: 8px; }
-  .jb-icon { display: inline-flex; align-items: center; justify-content: center; width: 32px; height: 32px; flex: none; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 70%, transparent); color: var(--muted); border-radius: 999px; font: 700 15px/1 inherit; text-decoration: none; cursor: pointer; transition: color .14s, border-color .14s; }
+  /* Home tab — a tab-styled pill on the far LEFT, before the wordmark. */
+  .jb-hometab { display: inline-flex; align-items: center; gap: 7px; flex: none; border: 1px solid var(--line); background: color-mix(in srgb, var(--void2) 60%, transparent); color: var(--muted); border-radius: 11px; padding: 9px 15px; font: 800 13px/1 inherit; text-decoration: none; cursor: pointer; transition: color .14s, border-color .14s; }
+  .jb-hometab:hover { color: var(--accent); border-color: var(--accent); }
+  .jb-hometab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .jb-hometab .ht-g { font-size: 15px; line-height: 1; }
+  /* Utility buttons (theme / help) grouped at the right, before the FAB. */
+  .jb-util { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+  .jb-icon { display: inline-flex; align-items: center; justify-content: center; width: 38px; height: 38px; flex: none; border: 1px solid var(--line); background: color-mix(in srgb, var(--panel) 70%, transparent); color: var(--muted); border-radius: 999px; font: 700 17px/1 inherit; text-decoration: none; cursor: pointer; transition: color .14s, border-color .14s; }
   .jb-icon:hover { color: var(--accent); border-color: var(--accent); }
   .jb-icon:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 
@@ -154,14 +159,14 @@
   .jb-modes button { border: 0; background: transparent; color: var(--muted); border-radius: 10px; padding: 9px 18px; font-weight: 800; font-size: 14px; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: color .14s; }
   .jb-modes button .mg { font-size: 15px; line-height: 1; }
   .jb-modes button:hover:not(.on) { color: var(--ink); }
-  .jb-modes button.on { color: #0b0c17; }
+  .jb-modes button.on { color: #fff; }
   .jb-modes button[data-mode="scry"].on { background: var(--scry); box-shadow: 0 2px 14px color-mix(in srgb, var(--scry) 45%, transparent); }
   .jb-modes button[data-mode="conjure"].on { background: var(--conjure); box-shadow: 0 2px 14px color-mix(in srgb, var(--conjure) 45%, transparent); }
   .jb-modes button[data-mode="codex"].on { background: var(--codex); box-shadow: 0 2px 14px color-mix(in srgb, var(--codex) 45%, transparent); }
   /* Funnel badge: how many jobs sit in the shortlist waiting in Conjure. */
-  .jb-count { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px; background: var(--conjure); color: #04211c; font: 800 11px/1 ui-monospace, monospace; }
+  .jb-count { display: inline-flex; align-items: center; justify-content: center; min-width: 19px; height: 19px; padding: 0 6px; border-radius: 999px; background: var(--conjure); color: #fff; font: 800 11px/1 ui-monospace, monospace; }
   .jb-count[hidden] { display: none; }
-  .jb-modes button[data-mode="conjure"].on .jb-count { background: rgba(0,0,0,.28); color: #fff; }
+  .jb-modes button[data-mode="conjure"].on .jb-count { background: rgba(0,0,0,.3); color: #fff; }
   .jb-count.bump { animation: jbbump .5s cubic-bezier(0.2, 0.8, 0.2, 1); }
   @keyframes jbbump { 0% { transform: scale(1); } 35% { transform: scale(1.35); } 100% { transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) { .jb-count.bump { animation: none; } }
@@ -363,22 +368,28 @@
   /* Live scan strip — one slim inline bar that sits ABOVE Scry (results stay in view),
      not a full-page takeover. A pulsing dot + phase label + single progress track that
      follows the active phase, the running spend, and a green "done" settle. */
-  .jb-live { display: flex; align-items: center; gap: 13px; flex-wrap: wrap; background: color-mix(in srgb, var(--accent) 6%, var(--panel)); border: 1px solid var(--line); border-radius: 12px; padding: 10px 14px; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; box-shadow: var(--shadow); }
+  .jb-live { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; background: var(--starfield), linear-gradient(120deg, color-mix(in srgb, var(--scry) 12%, var(--panel)), color-mix(in srgb, var(--accent) 8%, var(--panel))); border: 1px solid var(--line); border-radius: 12px; padding: 12px 16px; font-size: 12.5px; color: var(--muted); margin-bottom: 12px; box-shadow: var(--shadow); }
   .jb-live[hidden] { display: none; }
   .jb-live .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-variant-numeric: tabular-nums; color: var(--ink); font-weight: 700; }
-  .live-pulse { width: 9px; height: 9px; border-radius: 999px; background: var(--accent); flex: none; animation: livepulse 1.1s infinite; }
-  @keyframes livepulse { 0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--accent) 55%, transparent); } 70% { box-shadow: 0 0 0 7px transparent; } 100% { box-shadow: 0 0 0 0 transparent; } }
+  /* Astronomy scan indicator: a planet orbiting a star. The ring + centred sun read as
+     static while it spins; the ::after planet rides the orbit. */
+  .live-pulse { position: relative; width: 24px; height: 24px; flex: none; border: 1px solid color-mix(in srgb, var(--muted) 38%, transparent); border-radius: 50%; animation: liveorbit 1.6s linear infinite; }
+  .live-pulse::before { content: ""; position: absolute; inset: 7px; border-radius: 50%; background: radial-gradient(circle at 40% 38%, var(--accent2), var(--accent)); box-shadow: 0 0 9px color-mix(in srgb, var(--accent) 75%, transparent); }
+  .live-pulse::after { content: ""; position: absolute; top: -2.5px; left: 50%; width: 5px; height: 5px; margin-left: -2.5px; border-radius: 50%; background: var(--scry); box-shadow: 0 0 6px var(--scry); }
+  @keyframes liveorbit { to { transform: rotate(360deg); } }
   @media (prefers-reduced-motion: reduce) { .live-pulse { animation: none; } }
   .live-phase { font-weight: 800; color: var(--ink); }
   .live-count { color: var(--muted); }
   .live-track { flex: 1; min-width: 130px; height: 6px; border-radius: 999px; background: var(--panel-2); overflow: hidden; }
-  .live-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--accent), var(--accent2)); transition: width .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+  .live-track i { display: block; height: 100%; width: 0; border-radius: 999px; background: linear-gradient(90deg, var(--scry), var(--accent2)); box-shadow: 0 0 8px color-mix(in srgb, var(--accent) 45%, transparent); transition: width .3s cubic-bezier(0.2, 0.8, 0.2, 1); }
   .live-mode { font-size: 10px; font-weight: 800; letter-spacing: .05em; text-transform: uppercase; color: var(--accent2); border: 1px solid color-mix(in srgb, var(--accent2) 45%, transparent); border-radius: 6px; padding: 2px 6px; }
   .live-mode[hidden] { display: none; }
   .live-spend { color: var(--muted); font-weight: 700; }
   .jb-live.done { background: color-mix(in srgb, #2f9e44 9%, var(--panel)); border-color: color-mix(in srgb, #2f9e44 30%, var(--line)); }
-  .jb-live.done .live-pulse { background: #2f9e44; animation: none; }
-  .jb-live.done .live-track i { background: #2f9e44; }
+  .jb-live.done .live-pulse { animation: none; }
+  .jb-live.done .live-pulse::before { background: #2f9e44; box-shadow: 0 0 9px #2f9e44; }
+  .jb-live.done .live-pulse::after { display: none; }
+  .jb-live.done .live-track i { background: #2f9e44; box-shadow: 0 0 8px color-mix(in srgb, #2f9e44 45%, transparent); }
   /* Completion toast — a transient bottom-centre pill reporting scanned/filtered/shown. */
   .toast {
     position: fixed; left: 50%; bottom: 24px; transform: translate(-50%, 12px);
