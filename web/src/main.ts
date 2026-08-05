@@ -32,7 +32,7 @@ $('jb-bg').innerHTML = bgWheel();
 }
 
 let mode = 'scry';                 // 'scry' | 'conjure'
-let role = 'guest';                // 'guest' | 'admin' — derived from identity
+let role = 'guest';                // 'guest' | 'user' | 'admin' — derived from identity
 let runCfg = { realReady: false, spends: false };
 let scryMounted = false;
 let pollTimer = 0;
@@ -204,8 +204,10 @@ async function run() {
   scryStreamStart(); // clear the grid; verified rows stream into it live
   try {
     const body = JSON.stringify(collect());
-    const res = role === 'admin' ? await authFetch(api('run'), { method: 'POST', body }) : await fetch(api('run'), { method: 'POST', body });
-    if (!res) throw new Error('Sign in as an admin to run a live search.');
+    // Signed-in users (admin OR an ordinary account) send their bearer token so the server runs the
+    // REAL pipeline for them; guests hit it anonymously and get the mock.
+    const res = role !== 'guest' ? await authFetch(api('run'), { method: 'POST', body }) : await fetch(api('run'), { method: 'POST', body });
+    if (!res) throw new Error('Sign in to run a live search.');
     if (res.status === 429) { // demo scan quota reached — informational, not an error
       toast(await res.text());
       showRun(false); reloadScry(); setRunButtons(false);
@@ -223,7 +225,7 @@ async function openStream(id) {
   const url = api('run/stream') + '?id=' + encodeURIComponent(id);
   let res;
   try {
-    res = role === 'admin' ? await authFetch(url) : await fetch(url);
+    res = role !== 'guest' ? await authFetch(url) : await fetch(url);
   } catch { return poll(id); }
   if (!res || !res.ok || !res.body || !res.body.getReader) return poll(id);
   const reader = res.body.getReader();
@@ -298,11 +300,19 @@ mountAccountFab({
   nudgeGuest: true,
   onUpgrade: () => mountGate({ onDone: () => location.reload() }),
 });
-// Disclose demo limits to non-admins: the search popover carries the "one scan per week,
-// sample results" note so a visitor knows the deal before launching a scan.
-function updateDemoUI() { const el = $('sp-demo'); if (el) el.hidden = role === 'admin'; }
+// Disclose the scan limit in the search popover. Admins see nothing (unbounded). A signed-in user
+// gets REAL scans capped at one a week (Discern stays unlimited); a guest gets the demo note.
+function updateDemoUI() {
+  const el = $('sp-demo');
+  if (!el) return;
+  el.hidden = role === 'admin';
+  el.innerHTML =
+    role === 'user'
+      ? '⚡ <b>Live scans</b> — one per week. Reading postings into apply cards is unlimited.'
+      : '⚡ <b>Demo mode</b> — sample results, one scan per week. <b>Sign in</b> for live scans.';
+}
 onIdentity(() => {
-  role = isAdmin() ? 'admin' : 'guest';
+  role = isAdmin() ? 'admin' : isSignedIn() ? 'user' : 'guest';
   updateDemoUI();
   refreshTabCounts();
   // On sign-in, carry any guest-made Codex templates up to the account.
@@ -312,7 +322,7 @@ onIdentity(() => {
 // ---- boot: load the field/location catalogs, then show Scry ----
 fetch(api('config')).then((r) => r.json()).then((c) => {
   runCfg = c;
-  role = isAdmin() ? 'admin' : 'guest';
+  role = isAdmin() ? 'admin' : isSignedIn() ? 'user' : 'guest';
   updateDemoUI();
   fields = c.fields || [];
   selectedField = fields[0] ? fields[0].key : null;

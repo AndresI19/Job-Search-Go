@@ -187,9 +187,9 @@ func (s *server) modeLine() string {
 	case !s.realReady:
 		return "Guest & Admin both mock ($0) — set APIFY_TOKEN for real Admin runs"
 	case s.spends:
-		return "Guest=mock ($0), Admin=REAL Apify+Gemini (SPENDS)"
+		return "Guest=mock ($0); signed-in=REAL (1 scan/wk, SPENDS Apify); Admin=REAL unbounded"
 	default:
-		return "Guest=mock ($0), Admin=real path via mock backends ($0)"
+		return "Guest=mock ($0); signed-in & Admin=real path via mock backends ($0)"
 	}
 }
 
@@ -483,21 +483,29 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			http.Error(w, "sign in as an admin to run a real search", http.StatusUnauthorized)
 			return
 		}
-		// Demo scan quota: a non-admin may launch one scan per week. This runs BEFORE the
-		// real/mock split, so it also caps how often the real pipeline could ever fire for
-		// a non-admin — a backstop should the admin gate above ever regress. Disclosed to
-		// the visitor via the 429 message and the search popover.
+		// A signed-in (non-admin) user gets the REAL pipeline too, not the mock. Guests stay on the
+		// mock. Admins are unbounded; everyone below admin is held to ONE scan per demoRunWindow.
+		signedIn := s.userID(r) != ""
+		// Weekly scan quota: for a signed-in user this bounds their REAL Apify SPEND to one scan a
+		// week; for a guest it bounds mock load. Runs BEFORE the real/mock split. Disclosed to the
+		// visitor via the 429 message and the search popover.
 		if !admin {
 			if wait, ok := s.allowDemoRun(s.demoKey(r)); !ok {
 				days := int(wait.Hours())/24 + 1
 				w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
-				http.Error(w, fmt.Sprintf("Demo mode — one scan per week. Your next scan unlocks in %d day%s.", days, plural(days)), http.StatusTooManyRequests)
+				lede := "Demo mode — one scan per week; sign in for live scans."
+				if signedIn {
+					lede = "One live scan per week."
+				}
+				http.Error(w, fmt.Sprintf("%s Your next scan unlocks in %d day%s.", lede, days, plural(days)), http.StatusTooManyRequests)
 				return
 			}
 		}
-		// The real pipeline runs only for an admin AND only when the environment
-		// wired it (APIFY_TOKEN etc.); everyone else gets the mock.
-		real := s.realReady && admin
+		// The real pipeline runs for any SIGNED-IN user when the environment wired it (APIFY_TOKEN
+		// etc.); guests get the mock. Signed-in non-admins are bounded to one real scan/week by the
+		// quota above; admins are unbounded. `admin` is OR'd in for the local no-auth path, where it
+		// comes from the request-body role while signedIn (DEV_USER_ID) is usually unset.
+		real := s.realReady && (admin || signedIn)
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
 		j := &jobState{
 			id: id, spends: real && s.spends, status: "running", phase: "apify",
@@ -1180,14 +1188,14 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Admins get real model summaries (Gemini); everyone else gets the $0 MockSummarizer, so
-	// the demo funnel (Consecrate → Discern → apply cards) works end-to-end without spending
-	// a token. The real backend is never reachable by a non-admin — and never at all without
-	// configured auth (a verified admin), the same invariant the run pipeline enforces.
-	admin := (s.auth != nil && s.auth.IsAdmin(r)) || (s.auth == nil && unauthedRealAllowed())
+	// Discern gives any SIGNED-IN user real Gemini summaries — it runs on the free-tier lite-flash
+	// ($0/token), so there is no per-use cost to meter and it stays unlimited. Guests get the $0
+	// MockSummarizer so the demo funnel (Consecrate → Discern → apply cards) still works end to end.
+	// (Locally, ALLOW_UNAUTHENTICATED_REAL opts in without configured auth.)
+	real := (s.auth != nil && s.userID(r) != "") || (s.auth == nil && unauthedRealAllowed())
 	var summarizer summarize.Summarizer = summarize.MockSummarizer{}
 	modelTag := "mock"
-	if admin {
+	if real {
 		if s.summarizer == nil {
 			http.Error(w, "summaries are unavailable — no summary backend configured", http.StatusServiceUnavailable)
 			return
