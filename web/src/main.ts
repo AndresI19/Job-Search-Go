@@ -86,7 +86,7 @@ function showConjure() {
   $('scry-root').hidden = true;
   $('conjure-root').hidden = false;
   $('codex-root').hidden = true;
-  mountConjure($('conjure-root'), { api, authFetch, onShortlistChange: refreshTabCounts }); // re-fetch each show (reflect fresh Consecrates)
+  mountConjure($('conjure-root'), { api, authFetch, isSignedIn, onShortlistChange: refreshTabCounts }); // re-fetch each show (reflect fresh Consecrates)
 }
 function showCodex() {
   $('runview').hidden = true;
