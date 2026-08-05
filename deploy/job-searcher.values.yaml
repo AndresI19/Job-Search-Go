@@ -58,8 +58,12 @@ env:
     value: /etc/.secrets/anthropic-api-key
   - name: GEMINI_API_KEY_FILE
     value: /etc/.secrets/gemini-api-key
-  # Postgres persistence: the connection string is a sealed secret file (added to
-  # job-searcher-secrets). Absent → persistence off, mock/preview only.
+  # Postgres persistence: the connection string is a sealed secret file (in
+  # job-searcher-secrets) pointing at the `jobsearch` database on the SHARED
+  # platform-db Postgres — the same instance that holds auth and quiz, recycled per
+  # the platform's one-Postgres-many-databases pattern, not a dedicated server.
+  # Provisioned in platform-orchestration (platform-db initSql + the sealed
+  # database-url key, verified in-cluster). Absent → persistence off, mock/preview only.
   - name: DATABASE_URL_FILE
     value: /etc/.secrets/database-url
   # Platform identity: verify a signed admin JWT before allowing a real (Apify-spending) run.
