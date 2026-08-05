@@ -26,13 +26,16 @@ export interface CodexDeps {
 
 const LS_TPL = 'jobomancer:codex:templates';
 const LS_PARAMS = 'jobomancer:codex:params';
+// Starter ids the user has trashed. Client-side only — starters ship in code, not in a store,
+// so "trashing" one just hides it in this browser.
+const LS_DISMISSED = 'jobomancer:codex:dismissed';
 // Reserved category: your PERSONAL info (name, phone, email, LinkedIn, GitHub, …), kept
 // separate from company/application templates. Rendered as a compact field strip, and its
 // values feed the {{TOKENS}} in templates (a "LinkedIn" field fills {{LINKEDIN}}). 'Quick Info'
 // is the legacy name for the same category, still recognised so older entries aren't orphaned.
 const PERSONAL = 'Personal Info';
 const QUICK = 'Quick Info';
-const isPersonal = (t: Template): boolean => t.category === PERSONAL || t.category === QUICK;
+export const isPersonal = (t: Template): boolean => t.category === PERSONAL || t.category === QUICK;
 // The {{TOKEN}} a personal field fills: its label upper-cased ("Full Name" → FULL_NAME).
 export const fieldToken = (label: string): string => label.trim().toUpperCase().replace(/[^A-Z0-9]+/g, '_').replace(/^_|_$/g, '');
 // Build a token→value map from a user's personal fields, for filling templates elsewhere (Conjure).
@@ -96,6 +99,7 @@ export function fill(body: string, params: Record<string, string>): string {
 const prettyToken = (t: string) => t.replace(/_/g, ' ').toLowerCase().replace(/^\w/, (c) => c.toUpperCase());
 
 const loadLocalTemplates = (): Template[] => { try { return JSON.parse(localStorage.getItem(LS_TPL) || '[]'); } catch { return []; } };
+const loadDismissed = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(LS_DISMISSED) || '[]') as string[]); } catch { return new Set(); } };
 
 // When a guest signs in, upload any templates they made in localStorage to their account, so
 // guest work follows them. Clears localStorage only if EVERY template uploaded (a partial
@@ -129,6 +133,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   let params: Record<string, string> = loadParams();
   let editing: Template | 'new' | null = null;
   let filterCat: string | null = null;
+  const dismissed = loadDismissed(); // starter ids trashed from the library (this browser)
+  const liveStarters = (): Template[] => STARTERS.filter((s) => !dismissed.has(s.id));
   let qForm: Template | 'new' | null = null; // inline Quick Info add/edit form
 
   function loadParams(): Record<string, string> {
@@ -203,7 +209,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   // token param bar, the category chips, and the main card grid.
   const quickItems = (): Template[] => templates.filter(isPersonal);
   function shownTemplates(): Template[] {
-    const all = [...templates, ...STARTERS].filter((t) => !isPersonal(t));
+    const all = [...templates, ...liveStarters()].filter((t) => !isPersonal(t));
     return filterCat ? all.filter((t) => (t.category || 'Uncategorized') === filterCat) : all;
   }
 
@@ -221,7 +227,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
 
   function categoryChips(): string {
-    const cats = Array.from(new Set([...templates, ...STARTERS].filter((t) => !isPersonal(t)).map((t) => t.category || 'Uncategorized')));
+    const cats = Array.from(new Set([...templates, ...liveStarters()].filter((t) => !isPersonal(t)).map((t) => t.category || 'Uncategorized')));
     const chip = (label: string, key: string | null) =>
       `<button class="cx-chip${filterCat === key ? ' on' : ''}" data-cat="${key === null ? '' : esc(key)}">${esc(label)}</button>`;
     return `<div class="cx-chips">${chip('All', null)}${cats.map((c) => chip(c, c)).join('')}</div>`;
@@ -239,7 +245,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
           .join('')
       : '';
     const actions = t.starter
-      ? `<button class="cx-btn" data-dup="${esc(t.id)}">Duplicate to edit</button>
+      ? `<button class="cx-btn" data-dup="${esc(t.id)}">Edit</button>
+         <button class="cx-btn danger" data-dismiss="${esc(t.id)}">Trash</button>
          <button class="cx-btn primary" data-copy="${esc(t.id)}">Copy</button>`
       : `<button class="cx-btn" data-edit="${esc(t.id)}">Edit</button>
          <button class="cx-btn danger" data-del="${esc(t.id)}">Delete</button>
@@ -334,8 +341,8 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
         <button class="cx-btn primary cx-new" id="cx-new">+ New template</button>
       </div>
       ${editing ? editor() : ''}
-      ${mine.length ? `<div class="cx-grid">${grid(mine)}</div>` : `<p class="cx-empty">No templates yet. <b>+ New template</b> to add your first, or duplicate a starter below.</p>`}
-      ${starters.length ? `<div class="cx-sec">Starters <span class="cx-secsub">generic skeletons — duplicate to make your own</span></div><div class="cx-grid">${grid(starters)}</div>` : ''}`;
+      ${mine.length ? `<div class="cx-grid">${grid(mine)}</div>` : `<p class="cx-empty">No templates yet. <b>+ New template</b> to add your first, or edit a starter below.</p>`}
+      ${starters.length ? `<div class="cx-sec">Starters <span class="cx-secsub">generic skeletons — Edit one to make your own, or Trash to hide it</span></div><div class="cx-grid">${grid(starters)}</div>` : ''}`;
 
     // param inputs
     root.querySelectorAll<HTMLInputElement>('.cx-param input').forEach((inp) =>
@@ -386,6 +393,16 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
           toast('Deleted');
           render();
         }
+      }),
+    );
+    // Trash a starter: hide the shipped skeleton from this browser's library (it isn't stored,
+    // so this is a local dismissal, not a delete).
+    root.querySelectorAll<HTMLElement>('[data-dismiss]').forEach((b) =>
+      b.addEventListener('click', () => {
+        dismissed.add(b.dataset.dismiss!);
+        try { localStorage.setItem(LS_DISMISSED, JSON.stringify([...dismissed])); } catch { /* private mode */ }
+        toast('Starter trashed');
+        render();
       }),
     );
     // toolbar / editor
