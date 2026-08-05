@@ -16,6 +16,7 @@ import (
 	"flag"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -62,6 +63,7 @@ func main() {
 	s := &server{
 		profPath: *profPath, cachePath: *cachePath, base: base,
 		appVersion: readVersion(), jobs: map[string]*jobState{}, appJobs: map[string]*applicatorJob{},
+		demoRuns: map[string]time.Time{},
 	}
 
 	// Platform identity. In-cluster (AUTH_JWKS_URI set) admin is a verified signed
@@ -252,6 +254,12 @@ type server struct {
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
 	jobSeq atomic.Int64
+
+	// Demo scan quota: non-admins get one scan per demoRunWindow (keyed by user id or
+	// IP). In-memory and per-process — a restart or a second replica resets it, which is
+	// fine: non-admin scans are the $0 mock, so this bounds load, not spend.
+	demoMu   sync.Mutex
+	demoRuns map[string]time.Time
 
 	appMu   sync.Mutex
 	appJobs map[string]*applicatorJob
@@ -464,6 +472,18 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
 			http.Error(w, "sign in as an admin to run a real search", http.StatusUnauthorized)
 			return
+		}
+		// Demo scan quota: a non-admin may launch one scan per week. This runs BEFORE the
+		// real/mock split, so it also caps how often the real pipeline could ever fire for
+		// a non-admin — a backstop should the admin gate above ever regress. Disclosed to
+		// the visitor via the 429 message and the search popover.
+		if !admin {
+			if wait, ok := s.allowDemoRun(s.demoKey(r)); !ok {
+				days := int(wait.Hours())/24 + 1
+				w.Header().Set("Retry-After", strconv.Itoa(int(wait.Seconds())))
+				http.Error(w, fmt.Sprintf("Demo mode — one scan per week. Your next scan unlocks in %d day%s.", days, plural(days)), http.StatusTooManyRequests)
+				return
+			}
 		}
 		// The real pipeline runs only for an admin AND only when the environment
 		// wired it (APIFY_TOKEN etc.); everyone else gets the mock.
@@ -935,9 +955,11 @@ func (s *server) refresh(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
+	// Refresh mutates the SHARED aggregate (the availability flag everyone sees), so it
+	// stays owner-only. A non-admin gets a friendly no-op rather than a 401 — the button
+	// exists for them in the demo, it just reports that upkeep is handled automatically.
 	if s.auth != nil && !s.auth.IsAdmin(r) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-		http.Error(w, "sign in as an admin to refresh listings", http.StatusUnauthorized)
+		writeJSON(w, map[string]any{"checked": 0, "removed": 0, "demo": true})
 		return
 	}
 	cands, err := s.db.AvailabilityCandidates(r.Context())
@@ -1059,6 +1081,51 @@ func (s *server) codex(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// demoRunWindow is how often a non-admin (demo) visitor may launch a scan.
+const demoRunWindow = 7 * 24 * time.Hour
+
+func plural(n int) string {
+	if n == 1 {
+		return ""
+	}
+	return "s"
+}
+
+// demoKey identifies a demo caller for the weekly scan quota: their signed-in user id,
+// else the client IP (first X-Forwarded-For hop behind the proxy, else RemoteAddr).
+func (s *server) demoKey(r *http.Request) string {
+	if id := s.userID(r); id != "" {
+		return "u:" + id
+	}
+	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
+		if i := strings.IndexByte(xff, ','); i >= 0 {
+			xff = xff[:i]
+		}
+		return "ip:" + strings.TrimSpace(xff)
+	}
+	host := r.RemoteAddr
+	if h, _, err := net.SplitHostPort(host); err == nil {
+		host = h
+	}
+	return "ip:" + host
+}
+
+// allowDemoRun enforces one scan per demoRunWindow for a non-admin caller. It returns the
+// wait until the next scan when blocked; when it allows one it records the time atomically,
+// so two rapid requests can't both slip through.
+func (s *server) allowDemoRun(key string) (time.Duration, bool) {
+	s.demoMu.Lock()
+	defer s.demoMu.Unlock()
+	now := time.Now()
+	if last, ok := s.demoRuns[key]; ok {
+		if wait := demoRunWindow - now.Sub(last); wait > 0 {
+			return wait, false
+		}
+	}
+	s.demoRuns[key] = now
+	return 0, true
+}
+
 // userID resolves the caller's platform identity: the verified auth claim when
 // auth is configured (in-cluster), else DEV_USER_ID for local dev ("" when unset,
 // which the saved/applicator queries treat as no user).
@@ -1099,14 +1166,18 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	if s.auth != nil && !s.auth.IsAdmin(r) {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="job-searcher"`)
-		http.Error(w, "sign in as an admin to launch the Applicator", http.StatusUnauthorized)
-		return
-	}
-	if s.summarizer == nil {
-		http.Error(w, "summaries are unavailable — no Claude backend configured", http.StatusServiceUnavailable)
-		return
+	// Admins get real Claude summaries; everyone else gets the $0 MockSummarizer, so the
+	// demo funnel (Consecrate → Discern → apply cards) works end-to-end without spending a
+	// token. The real backend is never reachable by a non-admin.
+	admin := s.auth == nil || s.auth.IsAdmin(r)
+	var summarizer summarize.Summarizer = summarize.MockSummarizer{}
+	modelTag := "mock"
+	if admin {
+		if s.summarizer == nil {
+			http.Error(w, "summaries are unavailable — no Claude backend configured", http.StatusServiceUnavailable)
+			return
+		}
+		summarizer, modelTag = s.summarizer, s.sumModel
 	}
 	userID := s.userID(r)
 	saved, err := s.db.SavedNotApplied(r.Context(), userID)
@@ -1164,10 +1235,10 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 			wg.Add(1)
 			go func(l model.Listing) {
 				defer wg.Done()
-				sum, serr := s.summarizer.Summarize(ctx, l)
+				sum, serr := summarizer.Summarize(ctx, l)
 				if serr != nil {
 					fmt.Fprintf(os.Stderr, "applicator: summarize %s: %v\n", l.URL, serr)
-				} else if uerr := s.db.UpsertSummary(ctx, l.URL, sum, s.sumModel); uerr != nil {
+				} else if uerr := s.db.UpsertSummary(ctx, l.URL, sum, modelTag); uerr != nil {
 					fmt.Fprintf(os.Stderr, "applicator: store summary %s: %v\n", l.URL, uerr)
 				}
 				job.mu.Lock()
