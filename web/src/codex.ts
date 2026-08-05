@@ -41,8 +41,10 @@ export function personalTokens(templates: Template[]): Record<string, string> {
   for (const t of templates) if (isPersonal(t)) { const k = fieldToken(t.title); if (k) out[k] = t.body; }
   return out;
 }
-// Suggested personal fields offered when adding one.
-const FIELD_SUGGESTIONS = ['Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Website', 'Location'];
+// Preset fields — always shown and non-deletable; the user just fills their values. Extra
+// custom fields can be added below and removed. FIELD_SUGGESTIONS backs the custom-add datalist.
+const PRESET_FIELDS = ['Name', 'Email', 'Phone', 'LinkedIn', 'GitHub', 'Website'];
+const FIELD_SUGGESTIONS = ['Location', 'Portfolio', 'Twitter', 'Pronouns'];
 
 const esc = (s: unknown) =>
   (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -288,24 +290,30 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
   function quickSection(): string {
     const items = quickItems();
-    const rows = items
+    const presetToks = new Set(PRESET_FIELDS.map(fieldToken));
+    const valueOf = (field: string) => { const t = items.find((x) => fieldToken(x.title) === fieldToken(field)); return t ? t.body : ''; };
+    // Preset fields — always present, non-deletable; just fill the value.
+    const presetRows = PRESET_FIELDS.map(
+      (f) => `<label class="cx-pf"><span class="cx-pf-k">${esc(f)}</span><input class="cx-pf-v" data-field="${esc(f)}" value="${esc(valueOf(f))}" placeholder="add your ${esc(f.toLowerCase())} — fills {{${esc(fieldToken(f))}}}" autocomplete="off"></label>`,
+    ).join('');
+    // Custom fields — anything not a preset; these keep edit + delete.
+    const custom = items.filter((t) => !presetToks.has(fieldToken(t.title)));
+    const customRows = custom
       .map((t) => {
         const v = t.body.trim();
         return `<div class="cx-qi">
-          <button class="cx-qi-copy" data-copyqi="${esc(t.id)}" title="Copy ${esc(t.title)}">
-            <span class="cx-qi-k">${esc(t.title || 'Untitled')}</span>
-            <span class="cx-qi-v">${esc(v.length > 60 ? v.slice(0, 60) + '…' : v)}</span>
-            <span class="cx-qi-tok">{{${esc(fieldToken(t.title))}}}</span>
-          </button>
+          <button class="cx-qi-copy" data-copyqi="${esc(t.id)}" title="Copy ${esc(t.title)}"><span class="cx-qi-k">${esc(t.title || 'Untitled')}</span><span class="cx-qi-v">${esc(v.length > 60 ? v.slice(0, 60) + '…' : v)}</span><span class="cx-qi-tok">{{${esc(fieldToken(t.title))}}}</span></button>
           <button class="cx-qi-mini" data-qedit="${esc(t.id)}" title="Edit" aria-label="Edit">✎</button>
           <button class="cx-qi-mini" data-qdel="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>
         </div>`;
       })
       .join('');
     return `<div class="cx-quick">
-      <div class="cx-quick-h"><span>👤 Personal Info</span><button class="cx-btn cx-qadd" id="cx-qadd">+ Add field</button></div>
-      ${items.length ? `<div class="cx-quick-list">${rows}</div>` : qForm ? '' : `<p class="cx-qempty">Your name &amp; contact details — LinkedIn, GitHub, phone, email. Each fills the matching <code>{{TOKEN}}</code> in your cover letters (a <b>LinkedIn</b> field fills <code>{{LINKEDIN}}</code>), here and when applying from Conjure.</p>`}
-      ${qForm ? quickForm() : ''}
+      <div class="cx-quick-h"><span>👤 Personal Info</span></div>
+      <p class="cx-pf-note">Fill these once — each value fills its matching <code>{{TOKEN}}</code> in your cover letters, here and when applying from Conjure.</p>
+      <div class="cx-pf-grid">${presetRows}</div>
+      ${custom.length ? `<div class="cx-quick-list cx-custom">${customRows}</div>` : ''}
+      <div class="cx-pf-add">${qForm ? quickForm() : '<button class="cx-btn cx-qadd" id="cx-qadd">+ Add custom field</button>'}</div>
     </div>`;
   }
 
@@ -391,6 +399,10 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     });
     root.querySelector('#cx-save')?.addEventListener('click', save);
 
+    // Preset personal fields: save on change (blur/enter). No re-render — the input keeps its value.
+    root.querySelectorAll<HTMLInputElement>('.cx-pf-v').forEach((inp) =>
+      inp.addEventListener('change', () => savePresetField(inp.dataset.field!, inp.value)),
+    );
     // Quick Info: copy verbatim (no token fill), inline add/edit, delete.
     root.querySelectorAll<HTMLElement>('[data-copyqi]').forEach((b) =>
       b.addEventListener('click', () => {
@@ -427,6 +439,24 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
       render();
     });
     root.querySelector('#cx-qsave')?.addEventListener('click', saveQuick);
+  }
+
+  // Upsert (or clear) a preset field's value, keyed by its token so a field is never duplicated.
+  function savePresetField(field: string, value: string): void {
+    const tok = fieldToken(field);
+    const existing = quickItems().find((t) => fieldToken(t.title) === tok);
+    const v = value.trim();
+    if (!v) {
+      if (existing) { removeTemplate(existing.id); templates = templates.filter((x) => x.id !== existing.id); }
+      delete params[tok];
+      saveParams();
+      return;
+    }
+    const t: Template = { id: existing ? existing.id : 'tpl-' + (crypto.randomUUID?.() || String(Date.now())), title: field, category: PERSONAL, body: v, tags: '' };
+    persist(t);
+    templates = [t, ...templates.filter((x) => x.id !== t.id)];
+    params[tok] = v;
+    saveParams();
   }
 
   function saveQuick(): void {
