@@ -297,4 +297,36 @@ fetch(api('config')).then((r) => r.json()).then((c) => {
   renderLocations();
 }).catch(() => { /* catalogs are best-effort; Scry still loads */ });
 
+// ---- first-run guide: decode the three rooms + the divination funnel ----
+// Shown once on first visit (localStorage), and re-openable anytime via the header "?".
+const GUIDE_SEEN = 'jobomancer:guide-seen';
+function openGuide() {
+  if (document.getElementById('jb-guide')) return;
+  const host = document.createElement('div');
+  host.id = 'jb-guide';
+  host.className = 'jb-guide';
+  host.innerHTML = `<div class="jbg-backdrop"><div class="jbg" role="dialog" aria-modal="true" aria-label="How Jobomancer works">
+    <button class="jbg-x" aria-label="Close">✕</button>
+    <h2>Welcome to Jobomancer</h2>
+    <p class="jbg-sub">Scry the real jobs from the ghosts, then Conjure the applications.</p>
+    <div class="jbg-rooms">
+      <div class="jbg-room scry"><span class="jbg-emoji">🔮</span><b>Scry</b><span>Browse verified jobs in a sortable, searchable grid. Tap the <b>★</b> to <b>Consecrate</b> a job — save it to your shortlist.</span></div>
+      <div class="jbg-room conjure"><span class="jbg-emoji">🪄</span><b>Conjure</b><span>Your shortlist, ready to apply. <b>Discern</b> reads each posting into an apply card; open it, then mark it <b>Manifested</b>.</span></div>
+      <div class="jbg-room codex"><span class="jbg-emoji">📖</span><b>Codex</b><span>Reusable cover letters, snippets, and quick links — with <code>{{tokens}}</code> filled in when you copy.</span></div>
+    </div>
+    <div class="jbg-legend"><b>The funnel:</b> <span class="jbg-step s1">★ Consecrate</span> → <span class="jbg-step s2">✨ Discern</span> → <span class="jbg-step s3">✓ Manifest</span></div>
+    <button class="jbg-go">Got it — start scrying</button>
+  </div></div>`;
+  document.body.appendChild(host);
+  const close = () => { host.remove(); try { localStorage.setItem(GUIDE_SEEN, '1'); } catch { /* private mode */ } document.removeEventListener('keydown', onKey); };
+  const onKey = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', onKey);
+  host.addEventListener('click', (e) => {
+    const t = e.target;
+    if (t.classList.contains('jbg-backdrop') || t.closest('.jbg-x') || t.closest('.jbg-go')) close();
+  });
+}
+$('jb-help')?.addEventListener('click', openGuide);
+try { if (!localStorage.getItem(GUIDE_SEEN)) openGuide(); } catch { /* private mode — just skip the first-run guide */ }
+
 showScry();
