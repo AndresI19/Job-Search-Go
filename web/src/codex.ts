@@ -26,6 +26,9 @@ interface CodexDeps {
 
 const LS_TPL = 'jobomancer:codex:templates';
 const LS_PARAMS = 'jobomancer:codex:params';
+// Reserved category: short, fixed snippets (links, phone, email) shown as compact
+// one-click copy chips at the top — no tokens, no big card.
+const QUICK = 'Quick Info';
 
 const esc = (s: unknown) =>
   (s == null ? '' : String(s)).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
@@ -81,6 +84,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   let params: Record<string, string> = loadParams();
   let editing: Template | 'new' | null = null;
   let filterCat: string | null = null;
+  let qForm: Template | 'new' | null = null; // inline Quick Info add/edit form
 
   function loadParams(): Record<string, string> {
     try {
@@ -159,8 +163,11 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
 
   // ---- rendering ----------------------------------------------------------------
+  // Quick Info items render in their own compact strip, so they're kept out of the
+  // token param bar, the category chips, and the main card grid.
+  const quickItems = (): Template[] => templates.filter((t) => t.category === QUICK);
   function shownTemplates(): Template[] {
-    const all = [...templates, ...STARTERS];
+    const all = [...templates, ...STARTERS].filter((t) => t.category !== QUICK);
     return filterCat ? all.filter((t) => (t.category || 'Uncategorized') === filterCat) : all;
   }
 
@@ -178,7 +185,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
 
   function categoryChips(): string {
-    const cats = Array.from(new Set([...templates, ...STARTERS].map((t) => t.category || 'Uncategorized')));
+    const cats = Array.from(new Set([...templates, ...STARTERS].filter((t) => t.category !== QUICK).map((t) => t.category || 'Uncategorized')));
     const chip = (label: string, key: string | null) =>
       `<button class="cx-chip${filterCat === key ? ' on' : ''}" data-cat="${key === null ? '' : esc(key)}">${esc(label)}</button>`;
     return `<div class="cx-chips">${chip('All', null)}${cats.map((c) => chip(c, c)).join('')}</div>`;
@@ -232,6 +239,39 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     </div>`;
   }
 
+  // Quick Info — a compact strip of one-click copy chips (label + value), plus a light
+  // inline add/edit form. No tokens, no card; just fixed snippets you copy verbatim.
+  function quickForm(): string {
+    const t = qForm === 'new' || qForm === null ? { title: '', body: '' } : qForm;
+    return `<div class="cx-qform">
+      <input id="cx-qlabel" value="${esc(t.title)}" placeholder="Label — e.g. LinkedIn" autocomplete="off">
+      <input id="cx-qvalue" value="${esc(t.body)}" placeholder="Value — e.g. linkedin.com/in/you" autocomplete="off">
+      <button class="cx-btn primary" id="cx-qsave">Save</button>
+      <button class="cx-btn" id="cx-qcancel">Cancel</button>
+    </div>`;
+  }
+  function quickSection(): string {
+    const items = quickItems();
+    const rows = items
+      .map((t) => {
+        const v = t.body.trim();
+        return `<div class="cx-qi">
+          <button class="cx-qi-copy" data-copyqi="${esc(t.id)}" title="Copy ${esc(t.title)}">
+            <span class="cx-qi-k">${esc(t.title || 'Untitled')}</span>
+            <span class="cx-qi-v">${esc(v.length > 60 ? v.slice(0, 60) + '…' : v)}</span>
+          </button>
+          <button class="cx-qi-mini" data-qedit="${esc(t.id)}" title="Edit" aria-label="Edit">✎</button>
+          <button class="cx-qi-mini" data-qdel="${esc(t.id)}" title="Delete" aria-label="Delete">✕</button>
+        </div>`;
+      })
+      .join('');
+    return `<div class="cx-quick">
+      <div class="cx-quick-h"><span>⚡ Quick Info</span><button class="cx-btn cx-qadd" id="cx-qadd">+ Add</button></div>
+      ${items.length ? `<div class="cx-quick-list">${rows}</div>` : qForm ? '' : `<p class="cx-qempty">Short, fixed snippets for one-click copy — your site, LinkedIn, phone, email.</p>`}
+      ${qForm ? quickForm() : ''}
+    </div>`;
+  }
+
   function render(): void {
     const shown = shownTemplates();
     const mine = shown.filter((t) => !t.starter);
@@ -242,6 +282,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
       <p class="croomnote">Your <b>Codex</b> — reusable application text. Fill the tokens once, then <b>Copy</b> any template with them substituted.${
         signedOut ? ' <span class="cx-note">Guest mode: templates are saved in this browser. <b>Sign in</b> to sync them.</span>' : ''
       }</p>
+      ${quickSection()}
       ${paramBar()}
       <div class="cx-toolbar">
         ${categoryChips()}
@@ -312,6 +353,65 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
       render();
     });
     root.querySelector('#cx-save')?.addEventListener('click', save);
+
+    // Quick Info: copy verbatim (no token fill), inline add/edit, delete.
+    root.querySelectorAll<HTMLElement>('[data-copyqi]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const t = templates.find((x) => x.id === b.dataset.copyqi);
+        if (t) navigator.clipboard?.writeText(t.body.trim()).then(() => toast('📋 Copied'), () => toast('Copy blocked by the browser'));
+      }),
+    );
+    root.querySelectorAll<HTMLElement>('[data-qedit]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const t = templates.find((x) => x.id === b.dataset.qedit);
+        if (t) {
+          qForm = { ...t };
+          render();
+        }
+      }),
+    );
+    root.querySelectorAll<HTMLElement>('[data-qdel]').forEach((b) =>
+      b.addEventListener('click', () => {
+        const t = templates.find((x) => x.id === b.dataset.qdel);
+        if (t && confirm(`Delete "${t.title || 'this item'}"?`)) {
+          removeTemplate(t.id);
+          templates = templates.filter((x) => x.id !== t.id);
+          toast('Deleted');
+          render();
+        }
+      }),
+    );
+    root.querySelector('#cx-qadd')?.addEventListener('click', () => {
+      qForm = 'new';
+      render();
+    });
+    root.querySelector('#cx-qcancel')?.addEventListener('click', () => {
+      qForm = null;
+      render();
+    });
+    root.querySelector('#cx-qsave')?.addEventListener('click', saveQuick);
+  }
+
+  function saveQuick(): void {
+    const label = (root.querySelector<HTMLInputElement>('#cx-qlabel')?.value || '').trim();
+    const value = (root.querySelector<HTMLInputElement>('#cx-qvalue')?.value || '').trim();
+    if (!label && !value) {
+      toast('Add a label or value first');
+      return;
+    }
+    const existingId = qForm && qForm !== 'new' ? qForm.id : '';
+    const t: Template = {
+      id: existingId || 'tpl-' + (crypto.randomUUID?.() || String(Date.now())),
+      title: label,
+      category: QUICK,
+      body: value,
+      tags: '',
+    };
+    persist(t);
+    templates = [t, ...templates.filter((x) => x.id !== t.id)];
+    qForm = null;
+    toast('✨ Saved to Quick Info');
+    render();
   }
 
   function save(): void {
