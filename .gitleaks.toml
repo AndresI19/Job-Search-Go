@@ -1,0 +1,13 @@
+# gitleaks configuration for Job-Search-Go.
+# Extends the default ruleset; adds a narrow allowlist for ONE known false positive.
+title = "Job-Search-Go"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "APIFY_ACTOR_ID is a PUBLIC Apify actor identifier (the scraper's id), documented in .env.template — not a credential. The real APIFY_TOKEN is supplied at runtime via a secret file and is never committed. Scoped to this exact key so any other high-entropy value in the template is still flagged."
+regexTarget = "line"
+regexes = [
+  '''APIFY_ACTOR_ID=[A-Za-z0-9]{10,32}''',
+]
