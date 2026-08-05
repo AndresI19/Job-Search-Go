@@ -5,6 +5,10 @@
 import '@platform/ui/tokens.css';
 import '@platform/ui/base.css';
 import '@platform/ui/gate.css';
+// Bundled display serif for the wordmark + headings (the Celestial Grimoire identity).
+import '@fontsource/cormorant-garamond/500.css';
+import '@fontsource/cormorant-garamond/600.css';
+import '@fontsource/cormorant-garamond/700.css';
 import './app.css';
 import { mountScry, scryStreamStart, scryStreamRows } from './scry';
 import { mountConjure } from './conjure';
@@ -331,6 +335,15 @@ function openGuide() {
     if (t.classList.contains('jbg-backdrop') || t.closest('.jbg-x') || t.closest('.jbg-go')) close();
   });
 }
+// Theme: dark celestial is the default; the ◐ button toggles the parchment light theme.
+const THEME_KEY = 'jobomancer:theme';
+const applyTheme = (t) => { document.documentElement.dataset.theme = t; };
+try { applyTheme(localStorage.getItem(THEME_KEY) || 'dark'); } catch { applyTheme('dark'); }
+$('jb-theme')?.addEventListener('click', () => {
+  const next = document.documentElement.dataset.theme === 'light' ? 'dark' : 'light';
+  applyTheme(next);
+  try { localStorage.setItem(THEME_KEY, next); } catch { /* private mode */ }
+});
 $('jb-help')?.addEventListener('click', openGuide);
 try { if (!localStorage.getItem(GUIDE_SEEN)) openGuide(); } catch { /* private mode — just skip the first-run guide */ }
 
