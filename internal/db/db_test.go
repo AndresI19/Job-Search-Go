@@ -322,6 +322,35 @@ func TestListingsScopedPerUser(t *testing.T) {
 	}
 }
 
+// ListingsWithNew flags each row new iff the LATEST run first-discovered it — the one-query form
+// the results endpoint uses instead of an Aggregate+New pair.
+func TestListingsWithNew(t *testing.T) {
+	d := testDB(t)
+	ctx := context.Background()
+	run1, _ := d.StartRun(ctx, "u1", "software", 2)
+	must(t, d.UpsertResults(ctx, "u1", run1, []model.Result{listing("https://a", "A"), listing("https://b", "B")}))
+	run2, _ := d.StartRun(ctx, "u1", "software", 1)
+	must(t, d.UpsertResults(ctx, "u1", run2, []model.Result{listing("https://c", "C")})) // c added by the latest run
+	_ = run2
+
+	got, err := d.ListingsWithNew(ctx, "u1")
+	must(t, err)
+	if len(got) != 3 {
+		t.Fatalf("want 3 listings, got %d", len(got))
+	}
+	isNew := map[string]bool{}
+	for _, g := range got {
+		isNew[g.Result.Listing.URL] = g.New
+	}
+	if !isNew["https://c"] || isNew["https://a"] || isNew["https://b"] {
+		t.Fatalf("only c (latest run's first-discovery) should be new: %v", isNew)
+	}
+	// A caller with no runs gets an empty set, not an error (COALESCE guards the NULL MAX).
+	if none, err := d.ListingsWithNew(ctx, "nobody"); err != nil || len(none) != 0 {
+		t.Fatalf("empty owner: %v %v", none, err)
+	}
+}
+
 func must(t *testing.T, err error) {
 	t.Helper()
 	if err != nil {

@@ -239,6 +239,46 @@ func (d *DB) Listings(ctx context.Context, userID string, view View) ([]model.Re
 	return out, rows.Err()
 }
 
+// ScoredListing pairs a stored result with whether the latest run FIRST discovered it — the "new"
+// badge the Scry grid pins to the top.
+type ScoredListing struct {
+	Result model.Result
+	New    bool
+}
+
+// ListingsWithNew returns a user's available listings, each flagged new (first-discovered in the
+// latest run), in ONE query — replacing a separate Aggregate + New pair the results endpoint used to
+// run and reconcile by URL. Ordered newest-seen first.
+func (d *DB) ListingsWithNew(ctx context.Context, userID string) ([]ScoredListing, error) {
+	if !d.Enabled() {
+		return nil, nil
+	}
+	// COALESCE guards the no-runs case: MAX(id) is NULL ⇒ the comparison is NULL, which we read as
+	// "not new" rather than a scan error.
+	rows, err := d.pool.Query(ctx, `
+		SELECT result, COALESCE(first_run = (SELECT MAX(id) FROM runs WHERE user_id = $1), false)
+		FROM listings WHERE available AND user_id = $1
+		ORDER BY last_seen DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	var out []ScoredListing
+	for rows.Next() {
+		var raw []byte
+		var isNew bool
+		if err := rows.Scan(&raw, &isNew); err != nil {
+			return nil, err
+		}
+		var r model.Result
+		if err := json.Unmarshal(raw, &r); err != nil {
+			return nil, fmt.Errorf("decode stored result: %w", err)
+		}
+		out = append(out, ScoredListing{Result: r, New: isNew})
+	}
+	return out, rows.Err()
+}
+
 // Candidate is a listing the availability sweep can re-check: its dedup URL and
 // the URL a browser would actually open (external apply link when present).
 type Candidate struct{ URL, ApplyURL string }
