@@ -190,7 +190,10 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
           <button data-sub="manifested" class="${sub === 'manifested' ? 'on' : ''}">✓ Manifested <span class="c">${manifested.length}</span></button>
           <button data-sub="trashed" class="${sub === 'trashed' ? 'on' : ''}">🗑 Trash <span class="c">${trashed.length}</span></button>
         </div>
-        <div class="cactions">${actions}</div>
+        <div class="cactions">
+          <button class="crefresh" id="conjure-refresh" title="Sweep expired / delisted jobs to Trash (manifested jobs are spared)">↻ Refresh</button>
+          ${actions}
+        </div>
       </div>
       <div class="cgrid">${cards}</div>`;
 
@@ -248,6 +251,33 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
     }
     const db = root.querySelector('#conjure-discern');
     if (db) db.addEventListener('click', () => discern(db as HTMLButtonElement, [...selected]));
+    const rb = root.querySelector('#conjure-refresh');
+    if (rb) rb.addEventListener('click', () => refresh(rb as HTMLButtonElement));
+  }
+
+  // Refresh from Conjure — the same sweep Scry's Refresh runs (prune delisted / expired
+  // jobs to Trash, sparing manifested), for visits that only touch the shortlist. Reloads
+  // Conjure's own data via load(), so the current sub-tab is preserved.
+  function refresh(btn: HTMLButtonElement): void {
+    const label = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = '↻ Checking…';
+    deps
+      .authFetch(deps.api('refresh'), { method: 'POST' })
+      .then((res) => {
+        if (!res) throw new Error('Sign in as an admin to refresh');
+        if (!res.ok) return res.text().then((t) => Promise.reject(new Error(t)));
+        return res.json() as Promise<{ removed: number }>;
+      })
+      .then(({ removed }) => {
+        toast(`🗑 Swept ${removed} expired job${removed === 1 ? '' : 's'} to Trash`);
+        load(); // reflect the sweep; load() re-renders the current tab
+      })
+      .catch((e: Error) => {
+        btn.disabled = false;
+        btn.textContent = label;
+        toast(e.message || 'Refresh failed');
+      });
   }
 
   // Mark manifested = honor-system self-report (applying happens off-site). Persists via

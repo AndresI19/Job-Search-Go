@@ -80,6 +80,10 @@
 .ccard .selhint { margin-left: auto; font-size: 10px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
 .ccard.sel .selhint { color: var(--accent); }
 .cactions { margin-left: auto; display: flex; align-items: center; gap: 10px; }
+/* Refresh — always available in Conjure (not just Scry), for shortlist-only visits. */
+.crefresh { border: 1px solid var(--line); background: var(--panel); color: var(--muted); border-radius: 10px; padding: 8px 14px; font-weight: 800; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; }
+.crefresh:hover:not(:disabled) { color: var(--accent); border-color: var(--accent); }
+.crefresh:disabled { opacity: .6; cursor: default; }
 .linkbtn { border: 0; background: none; color: var(--accent); font-weight: 700; font-size: 12.5px; text-decoration: underline; text-underline-offset: 2px; cursor: pointer; }
 /* Discerned card: pay left, actions bottom-right */
 .cfoot { align-items: flex-end; }
