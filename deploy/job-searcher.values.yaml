@@ -36,15 +36,16 @@ env:
   # The rootfs is read-only; only /tmp (an emptyDir the chart mounts) is writable.
   - name: PROFILE_PATH
     value: /tmp/profile.yaml
-  # In-cluster judging: the metered API backend (a pod has no Claude Code login for the CLI
-  # judge). Key comes from the secret file below, never the env.
+  # ONE model for the whole service: Google Gemini's free tier. The judge (verdict) and the
+  # summarizer both run on Gemini, so no Anthropic key is needed in the cluster — a pod has
+  # no Claude Code login for the CLI judge, and the API judge would meter per token, whereas
+  # Gemini's lite-flash is $0. Key comes from the secret file below, never the env.
   - name: JUDGE_BACKEND
-    value: api
+    value: gemini
   - name: JUDGE_MODEL
-    value: claude-haiku-4-5
-  # Applicator distillation uses Google Gemini's free tier instead of Anthropic, so the
-  # summaries work on a $0 key. Explicitly set (not inheriting JUDGE_BACKEND) so the
-  # summarizer is decoupled from the judge. Key is the sealed file below.
+    value: gemini-flash-lite-latest
+  # Applicator distillation runs on the same free-tier Gemini. Set explicitly (rather than
+  # inheriting JUDGE_BACKEND) so judge and summarizer stay independently switchable.
   - name: SUMMARIZE_BACKEND
     value: gemini
   # A current free-tier "-latest" lite-flash alias. Older pinned models (gemini-2.0-flash)
@@ -54,8 +55,6 @@ env:
   # Secrets are read from files under the read-only mount, so they never enter the pod env.
   - name: APIFY_TOKEN_FILE
     value: /etc/.secrets/apify-token
-  - name: ANTHROPIC_API_KEY_FILE
-    value: /etc/.secrets/anthropic-api-key
   - name: GEMINI_API_KEY_FILE
     value: /etc/.secrets/gemini-api-key
   # Postgres persistence: the connection string is a sealed secret file (in
@@ -81,8 +80,9 @@ env:
   - name: AUTH_AUDIENCE
     value: platform
 # The sealed secret (created in platform-orchestration/k8s/bootstrap) mounted as READ-ONLY
-# FILES at /etc/.secrets — keeping APIFY_TOKEN and ANTHROPIC_API_KEY out of both the helm
-# source (only ciphertext is committed) and the pod environment.
+# FILES at /etc/.secrets — keeping APIFY_TOKEN and GEMINI_API_KEY out of both the helm
+# source (only ciphertext is committed) and the pod environment. (The secret's now-unused
+# anthropic-api-key key is harmless; it can be dropped on the next re-seal.)
 volumeMounts:
   - name: secrets
     mountPath: /etc/.secrets
