@@ -1,6 +1,6 @@
 // The Conjure card board — the reimagined Apply surface. Where Scry is a dense grid
 // for scanning hundreds of jobs, Conjure is a reading surface for the handful you've
-// committed to: each saved job is a card showing Claude's summary (what it REQUIRES vs
+// committed to: each saved job is a card showing Gemini's summary (what it REQUIRES vs
 // PREFERS, what the role & company do) and honest pay provenance. Reads the typed
 // api/applicator contract (saved-not-applied jobs joined with cached summaries).
 //
@@ -70,7 +70,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   const selected = new Set<string>(); // Consecrated jobs picked for Discern (multiselect)
   let codexTemplates: Template[] | null = null; // lazily loaded for the "Cover letter" picker
   let lastLetter: { title: string; company: string; text: string } | null = null; // shown in the Discerned preview panel
-  // Discern progress: while active, render() shows a dedicated loading screen (Claude reads
+  // Discern progress: while active, render() shows a dedicated loading screen (Gemini reads
   // each posting) instead of the card board, with a live done/total track.
   const discerning = { active: false, done: 0, total: 0 };
 
@@ -217,7 +217,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   }
 
   // The Discern loading screen — Conjure's own scan indicator (teal/wand-themed, distinct
-  // from Scry's navy strip). Reads each posting with Claude; the track follows done/total.
+  // from Scry's navy strip). Reads each posting with Gemini; the track follows done/total.
   function discernLoading(): string {
     const { done, total } = discerning;
     const pct = total ? Math.round((done / total) * 100) : 0;
@@ -225,7 +225,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
       <div class="cload-panel">
         <div class="cload-orb"><span class="cload-pulse"></span>✨</div>
         <div class="cload-title">Discerning your shortlist…</div>
-        <div class="cload-sub">Reading each posting with Claude — required vs preferred, what the role &amp; company do, and honest pay.</div>
+        <div class="cload-sub">Reading each posting with Gemini — required vs preferred, what the role &amp; company do, and honest pay.</div>
         <div class="cload-track"><i style="width:${pct}%"></i></div>
         <div class="cload-count"><b>${done}</b> / ${total} read</div>
       </div>
@@ -471,7 +471,7 @@ export function mountConjure(root: HTMLElement, deps: ConjureDeps): void {
   function discern(btn: HTMLButtonElement, urls: string[]): void {
     if (!urls.length) return;
     btn.disabled = true;
-    // Take over the room with the Discern loading screen while Claude reads the selection.
+    // Take over the room with the Discern loading screen while Gemini reads the selection.
     discerning.active = true;
     discerning.done = 0;
     discerning.total = urls.length;

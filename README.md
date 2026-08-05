@@ -1,6 +1,6 @@
 # Job-Search-Go
 
-A concurrent Go tool that finds **legitimate** software-engineering job listings and filters out the ghost jobs. It ingests LinkedIn listings (via Apify), concurrently verifies each one by cross-referencing the employer's own applicant-tracking system and asking Claude to judge the match, and writes a scored CSV.
+A concurrent Go tool that finds **legitimate** software-engineering job listings and filters out the ghost jobs. It ingests LinkedIn listings (via Apify), concurrently verifies each one by cross-referencing the employer's own applicant-tracking system and asking Gemini to judge the match, and writes a scored CSV.
 
 > **Status:** early development. The module scaffold, core domain model, and CSV output stage are in place. Ingest and verification are in progress — tracked on the "Let's Go!" project board.
 
@@ -15,7 +15,7 @@ flowchart TD
     subgraph cloud["External services"]
         APIFY["Apify Actor<br/>LinkedIn scrape"]
         ATSAPI["Greenhouse / Lever<br/>ATS boards"]
-        CLAUDEAPI["Claude API"]
+        GEMINIAPI["Gemini API"]
     end
 
     subgraph go["Go pipeline (this repo)"]
@@ -23,7 +23,7 @@ flowchart TD
         POOL{{"Verification worker pool<br/>fan out per listing"}}
         SIG["Tier-1 LinkedIn signals"]
         XREF["ATS cross-reference"]
-        JUDGE["Claude match + judge"]
+        JUDGE["Gemini match + judge"]
         SCORE["Coverage-aware score + verdict"]
         CSV[("Scored CSV")]
     end
@@ -34,7 +34,7 @@ flowchart TD
     POOL --> XREF
     POOL --> JUDGE
     XREF <-->|slug → open reqs| ATSAPI
-    JUDGE <-->|prompt → verdict| CLAUDEAPI
+    JUDGE <-->|prompt → verdict| GEMINIAPI
     SIG --> SCORE
     XREF --> SCORE
     JUDGE --> SCORE
@@ -44,14 +44,14 @@ flowchart TD
 The boundary is deliberate:
 - **Apify** does the scraping on its own cloud — the hostile, anti-bot part — and returns structured JSON. Nothing is scraped locally.
 - **Go** owns everything downstream: normalization, the concurrent verification fan-out, scoring, and CSV output. A single `Source` interface (`Fetch(ctx, query) ([]Listing, error)`) abstracts both ingest and ATS lookups.
-- **Claude** (via `anthropic-sdk-go`) replaces brittle hand-rolled fuzzy matching with semantic title matching and a legitimacy verdict, returned as structured output.
+- **Gemini** (Google's free-tier lite-flash, called over the Generative Language REST API) replaces brittle hand-rolled fuzzy matching with semantic title matching and a legitimacy verdict, returned as structured JSON. One model serves both the judge and the applicator summaries; a `claude` CLI backend remains available for local dev.
 
 ## How verification works
 
 No single source verifies every employer, so legitimacy is a **coverage-aware score** assembled from whatever signals are available for each listing:
 1. **Tier-1 (universal):** signals from the listing itself — repost frequency, applicant count versus posting age, and whether it links to a real ATS apply URL.
 2. **ATS cross-reference (strong):** resolve the company to its Greenhouse/Lever board and look for a matching open requisition. A match is the strongest positive signal, and modern startups overwhelmingly use these systems.
-3. **Claude judge:** semantic comparison between the listing and candidate ATS requisitions, plus an overall verdict.
+3. **Gemini judge:** semantic comparison between the listing and candidate ATS requisitions, plus an overall verdict.
 
 Each result records which signals actually ran, so an `uncertain` verdict from thin coverage stays distinct from a genuine `likely-ghost`.
 
@@ -67,7 +67,7 @@ go run ./cmd/jobsearch
 
 Runtime configuration (needed as the ingest and verification stages land):
 - `APIFY_TOKEN` — for the LinkedIn ingest Actor
-- `ANTHROPIC_API_KEY` — for the Claude verification step
+- `GEMINI_API_KEY` — for the Gemini verification + summary step (free-tier lite-flash)
 
 Both are read from the environment; no secrets live in the code.
 
@@ -83,4 +83,4 @@ internal/output/    CSV writer
 
 ---
 
-A learning project exploring Go concurrency, the Anthropic Go SDK, and ATS-based job verification.
+A learning project exploring Go concurrency, calling an LLM (Gemini) for structured verdicts over plain HTTP, and ATS-based job verification.

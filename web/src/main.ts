@@ -174,7 +174,7 @@ function resetLive() {
 // rides on the right, folding in the old separate Budget bar.
 function applyProgress(j) {
   const cur = j.phase === 'apify' ? j.apify : j.verify;
-  $('run-title').textContent = j.phase === 'apify' ? 'Scraping LinkedIn + Indeed…' : j.phase === 'verify' ? 'Verifying (ATS + Claude)…' : 'Finishing…';
+  $('run-title').textContent = j.phase === 'apify' ? 'Scraping LinkedIn + Indeed…' : j.phase === 'verify' ? 'Verifying (ATS + Gemini)…' : 'Finishing…';
   $('live-done').textContent = (cur.done || 0).toLocaleString();
   $('live-total').textContent = (cur.total || 0).toLocaleString();
   $('live-bar').style.width = (cur.total ? Math.round((cur.done / cur.total) * 100) : 0) + '%';

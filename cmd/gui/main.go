@@ -97,7 +97,7 @@ func main() {
 	if err := s.enableLive(); err != nil {
 		fmt.Fprintf(os.Stderr, "note: Admin (real) runs unavailable — %v; Admin will fall back to mock\n", err)
 	}
-	// Safety invariant: paid backends (Apify scrape, Claude verify + summaries) may only run
+	// Safety invariant: paid backends (Apify scrape, Gemini verify + summaries) may only run
 	// when platform auth is configured — otherwise "admin" is just an unverified role claim
 	// anyone could spoof to spend the keys. Without auth we stay mock-only, UNLESS an operator
 	// explicitly opts in for trusted local testing (ALLOW_UNAUTHENTICATED_REAL=1).
@@ -108,7 +108,7 @@ func main() {
 		fmt.Fprintf(os.Stderr, "WARNING: real pipeline enabled WITHOUT auth (ALLOW_UNAUTHENTICATED_REAL=1) — admin is unverified; trusted local testing only.\n")
 	}
 
-	// Applicator summaries (Claude). Independent of Apify — needs only the DB and a
+	// Applicator summaries (Gemini). Independent of Apify — needs only the DB and a
 	// summarizer backend (SUMMARIZE_BACKEND, else JUDGE_BACKEND). Best-effort: a
 	// launch just reports "unavailable" if this failed to wire.
 	s.sumModel = envOr("SUMMARIZE_MODEL", envOr("JUDGE_MODEL", "claude-haiku-4-5"))
@@ -187,7 +187,7 @@ func (s *server) modeLine() string {
 	case !s.realReady:
 		return "Guest & Admin both mock ($0) — set APIFY_TOKEN for real Admin runs"
 	case s.spends:
-		return "Guest=mock ($0), Admin=REAL Apify+Claude (SPENDS)"
+		return "Guest=mock ($0), Admin=REAL Apify+Gemini (SPENDS)"
 	default:
 		return "Guest=mock ($0), Admin=real path via mock backends ($0)"
 	}
@@ -330,7 +330,7 @@ func (s *server) importResults(w http.ResponseWriter, r *http.Request) {
 }
 
 // jobState is one search run's live progress. The mock runner drives it; a real
-// Apify+Claude runner would drive the same fields, so the API and UI don't change.
+// Apify+Gemini runner would drive the same fields, so the API and UI don't change.
 type jobState struct {
 	mu          sync.Mutex
 	id          string
@@ -629,7 +629,7 @@ func (s *server) runStream(w http.ResponseWriter, r *http.Request) {
 
 // runMock simulates a run against a $0 mock: it replays the suite's cached rows
 // with realistic timing so the Apify-load and post-process bars animate, without
-// touching Apify or Claude. Swapping in the real pipeline means replacing this
+// touching Apify or Gemini. Swapping in the real pipeline means replacing this
 // body with ingest → verify calls that drive the same jobState fields.
 func (s *server) runMock(j *jobState, rows [][]string) {
 	n := len(rows)
@@ -663,7 +663,7 @@ func (s *server) runMock(j *jobState, rows [][]string) {
 	j.mu.Lock()
 	j.phase = "verify"
 	j.mu.Unlock()
-	for i := 1; i <= n; i++ { // post-process: ATS + Claude verdict, per listing.
+	for i := 1; i <= n; i++ { // post-process: ATS + Gemini verdict, per listing.
 		time.Sleep(pause)
 		j.mu.Lock()
 		j.verifyDone = i
@@ -680,7 +680,7 @@ func (s *server) runMock(j *jobState, rows [][]string) {
 
 // runReal drives the actual pipeline, updating the same jobState the mock does:
 // build the search URL from keywords + filters, start the Apify scrape and poll
-// its dataset item-count for the Apify-load bar, normalize, verify (ATS + Claude)
+// its dataset item-count for the Apify-load bar, normalize, verify (ATS + Gemini)
 // with a per-listing callback for the post-process bar, apply the profile's
 // filters, and read the account's Apify usage for the rate bar.
 // scrapeSource runs one board's Apify actor to completion, streaming its item
@@ -1174,22 +1174,22 @@ func (a *applicatorJob) snapshot() map[string]any {
 
 // applicatorLaunch starts a batch summarizing every saved-but-not-applied listing
 // that lacks a cached summary, storing each in job_summaries (so re-launch is
-// incremental). Admin-gated under configured auth — it spends Claude tokens.
+// incremental). Admin-gated under configured auth — it spends Gemini tokens.
 func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodPost {
 		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		return
 	}
-	// Admins get real Claude summaries; everyone else gets the $0 MockSummarizer, so the
-	// demo funnel (Consecrate → Discern → apply cards) works end-to-end without spending a
-	// token. The real backend is never reachable by a non-admin — and never at all without
+	// Admins get real model summaries (Gemini); everyone else gets the $0 MockSummarizer, so
+	// the demo funnel (Consecrate → Discern → apply cards) works end-to-end without spending
+	// a token. The real backend is never reachable by a non-admin — and never at all without
 	// configured auth (a verified admin), the same invariant the run pipeline enforces.
 	admin := (s.auth != nil && s.auth.IsAdmin(r)) || (s.auth == nil && unauthedRealAllowed())
 	var summarizer summarize.Summarizer = summarize.MockSummarizer{}
 	modelTag := "mock"
 	if admin {
 		if s.summarizer == nil {
-			http.Error(w, "summaries are unavailable — no Claude backend configured", http.StatusServiceUnavailable)
+			http.Error(w, "summaries are unavailable — no summary backend configured", http.StatusServiceUnavailable)
 			return
 		}
 		summarizer, modelTag = s.summarizer, s.sumModel
@@ -1242,7 +1242,7 @@ func (s *server) applicatorLaunch(w http.ResponseWriter, r *http.Request) {
 	s.appMu.Unlock()
 
 	// Summarize concurrently; the summarizer is already Bounded, so goroutines queue
-	// at its semaphore rather than flooding Claude.
+	// at its semaphore rather than flooding Gemini.
 	go func() {
 		ctx := context.Background()
 		var wg sync.WaitGroup

@@ -1,11 +1,13 @@
-// Package judge evaluates a job listing's legitimacy with Claude, returning a
-// model.Verdict. It offers two interchangeable backends behind one interface:
+// Package judge evaluates a job listing's legitimacy and returns a model.Verdict.
+// It offers interchangeable backends behind one interface:
 //
 //   - CLIJudge shells out to the `claude` command in headless mode, reusing an
 //     existing Claude Code login (e.g. a Pro/Max subscription) — no API key.
 //   - APIJudge calls the Anthropic API directly with an API key.
+//   - GeminiJudge calls Google's Gemini API with a free-tier key ($0) — the backend
+//     that lets the whole service run on one model, no Anthropic key in the cluster.
 //
-// Pick one with FromEnv. Wrap either with Bounded to cap concurrency.
+// Pick one with FromEnv. Wrap any with Bounded to cap concurrency.
 package judge
 
 import (
@@ -117,9 +119,10 @@ func buildPrompt(in Input) string {
 
 // FromEnv builds a Judge from configuration:
 //
-//	JUDGE_BACKEND      "cli" (default) or "api"
-//	JUDGE_MODEL        model id (default claude-haiku-4-5)
-//	JUDGE_CONCURRENCY  max concurrent evaluations (default: cli=3, api=16)
+//	JUDGE_BACKEND      "cli" (default), "api", "gemini", or "mock"
+//	JUDGE_MODEL        model id (default claude-haiku-4-5; ignored by gemini, which
+//	                   coerces to its own free-tier default unless given a gemini-* id)
+//	JUDGE_CONCURRENCY  max concurrent evaluations (default: cli=3, api=16, gemini=4)
 func FromEnv() (Judge, error) {
 	backend := strings.ToLower(envOr("JUDGE_BACKEND", "cli"))
 	modelID := envOr("JUDGE_MODEL", defaultModel)
@@ -136,11 +139,15 @@ func FromEnv() (Judge, error) {
 	case "api":
 		inner, err = NewAPIJudge(modelID)
 		defaultLim = 16
+	case "gemini":
+		// Free-tier keyed backend; lower concurrency to stay inside the free RPM quota.
+		inner = NewGeminiJudge(modelID)
+		defaultLim = 4
 	case "mock":
-		inner = MockJudge{} // $0, no Claude — for proving the pipeline end to end
+		inner = MockJudge{} // $0, no model — for proving the pipeline end to end
 		defaultLim = 16
 	default:
-		return nil, fmt.Errorf("unknown JUDGE_BACKEND %q (want \"cli\", \"api\", or \"mock\")", backend)
+		return nil, fmt.Errorf("unknown JUDGE_BACKEND %q (want \"cli\", \"api\", \"gemini\", or \"mock\")", backend)
 	}
 	if err != nil {
 		return nil, err
