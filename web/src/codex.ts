@@ -143,7 +143,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   // Bring the editor into view when it opens — it renders near the top of the room, so on a long
   // library a click far down would otherwise open it off-screen and look like nothing happened.
   const scrollToEditor = (): void => { root.querySelector('.cx-editor')?.scrollIntoView({ behavior: 'smooth', block: 'center' }); };
-  let qForm: Template | 'new' | null = null; // inline Quick Info add/edit form
+  let qForm: Template | 'new' | null = null; // inline Personal Info add/edit form
 
   function loadParams(): Record<string, string> {
     try {
@@ -213,7 +213,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
   }
 
   // ---- rendering ----------------------------------------------------------------
-  // Quick Info items render in their own compact strip, so they're kept out of the
+  // Personal Info items render in their own compact strip, so they're kept out of the
   // token param bar, the category chips, and the main card grid.
   const quickItems = (): Template[] => templates.filter(isPersonal);
   function shownTemplates(): Template[] {
@@ -452,7 +452,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     root.querySelectorAll<HTMLInputElement>('.cx-pf-v').forEach((inp) =>
       inp.addEventListener('change', () => savePresetField(inp.dataset.field!, inp.value)),
     );
-    // Quick Info: copy verbatim (no token fill), inline add/edit, delete.
+    // Personal Info: copy verbatim (no token fill), inline add/edit, delete.
     root.querySelectorAll<HTMLElement>('[data-copyqi]').forEach((b) =>
       b.addEventListener('click', () => {
         const t = templates.find((x) => x.id === b.dataset.copyqi);
@@ -526,7 +526,7 @@ export function mountCodex(root: HTMLElement, deps: CodexDeps): void {
     persist(t);
     templates = [t, ...templates.filter((x) => x.id !== t.id)];
     qForm = null;
-    toast('✨ Saved to Quick Info');
+    toast('✨ Saved to Personal Info');
     render();
   }
 

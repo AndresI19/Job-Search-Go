@@ -1,7 +1,7 @@
-// @ts-nocheck — Jobomancer shell. A purpose-built two-room shell (Scry / Conjure) that
+// Jobomancer shell. A purpose-built three-room shell (Scry / Conjure / Codex) that
 // replaced the legacy tabbed single-page monolith. It owns only the chrome: the mode
-// switch, the search popover, the scan run/progress, and Refresh. The two views are the
-// typed modules web/src/{scry,conjure}.ts, which read the domain endpoints directly.
+// switch, the search popover, the scan run/progress, and Refresh. The three views are the
+// typed modules web/src/{scry,conjure,codex}.ts, which read the domain endpoints directly.
 import '@platform/ui/tokens.css';
 import '@platform/ui/base.css';
 import '@platform/ui/gate.css';
@@ -35,17 +35,17 @@ let mode = 'scry';                 // 'scry' | 'conjure'
 let role = 'guest';                // 'guest' | 'user' | 'admin' — derived from identity
 let runCfg = { realReady: false, spends: false };
 let scryMounted = false;
-let pollTimer = 0;
+let pollTimer: ReturnType<typeof setTimeout> | number = 0;
 
 // ---- status + toast ----
-function setStatus(msg, err) { const s = $('status'); if (!s) return; s.innerHTML = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
-let toastTimer = 0;
+function setStatus(msg, err?) { const s = $('status'); if (!s) return; s.innerHTML = msg || ''; s.className = 'status' + (err ? ' err' : ''); }
+let toastTimer: ReturnType<typeof setTimeout> | number = 0;
 function toast(html) { const t = $('toast'); if (!t) return; t.innerHTML = html; t.hidden = false; t.classList.add('show'); clearTimeout(toastTimer); toastTimer = setTimeout(() => { t.classList.remove('show'); }, 3200); }
 
 // ---- mode switch (Scry / Conjure) ----
 function setMode(m) {
   mode = m;
-  for (const b of document.querySelectorAll('#jb-modes button')) {
+  for (const b of document.querySelectorAll<HTMLElement>('#jb-modes button')) {
     const on = b.dataset.mode === m;
     b.classList.toggle('on', on);
     if (on) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current');
@@ -64,7 +64,7 @@ async function refreshTabCounts() {
   try {
     const res = await authFetch(api('saved'));
     if (res && res.ok) {
-      const flags = (await res.json()).flags || {};
+      const flags = ((await res.json()).flags || {}) as Record<string, { pinned?: boolean; applied?: boolean; available?: boolean }>;
       for (const f of Object.values(flags)) if (f && f.pinned && !f.applied && f.available) n++;
     }
   } catch { /* best-effort — a missing count just hides the badge */ }
@@ -96,7 +96,7 @@ function showCodex() {
   mountCodex($('codex-root'), { api, authFetch, isSignedIn }); // re-fetch each show
 }
 function reloadScry() { scryMounted = false; if (mode === 'scry') showScry(); }
-document.querySelectorAll('#jb-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
+document.querySelectorAll<HTMLElement>('#jb-modes button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 
 // ---- search popover (opened from the Scry ctx bar's New search button) ----
 function closeSearch() { $('search-pop').hidden = true; }
@@ -111,7 +111,7 @@ function openSearchAt(anchor) {
 }
 $('sp-close').addEventListener('click', closeSearch);
 $('search-pop').addEventListener('click', (e) => e.stopPropagation());
-document.addEventListener('click', (e) => { if (!$('search-pop').hidden && !e.target.closest('#ctx-newsearch')) closeSearch(); });
+document.addEventListener('click', (e) => { if (!$('search-pop').hidden && !(e.target as Element).closest('#ctx-newsearch')) closeSearch(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeSearch(); });
 
 // ---- search params: field + location catalogs (from api/config) ----
@@ -123,12 +123,12 @@ let selectedLocations = new Set(['ma', 'ny', 'ca']);
 function renderFields() {
   const el = $('fields'); if (!el) return;
   el.innerHTML = fields.map((f) => `<button type="button" class="pchip${f.key === selectedField ? ' sel' : ''}" data-key="${esc(f.key)}">${esc(f.label)}</button>`).join('');
-  el.querySelectorAll('.pchip').forEach((b) => b.addEventListener('click', () => { selectedField = b.dataset.key; renderFields(); }));
+  el.querySelectorAll<HTMLElement>('.pchip').forEach((b) => b.addEventListener('click', () => { selectedField = b.dataset.key; renderFields(); }));
 }
 function renderLocations() {
   const el = $('locsel'); if (!el) return;
   el.innerHTML = locationsCatalog.map((l) => `<button type="button" class="pchip${selectedLocations.has(l.key) ? ' sel' : ''}" data-key="${esc(l.key)}">${esc(l.label)}</button>`).join('');
-  el.querySelectorAll('.pchip').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.key; selectedLocations.has(k) ? selectedLocations.delete(k) : selectedLocations.add(k); renderLocations(); }));
+  el.querySelectorAll<HTMLElement>('.pchip').forEach((b) => b.addEventListener('click', () => { const k = b.dataset.key; selectedLocations.has(k) ? selectedLocations.delete(k) : selectedLocations.add(k); renderLocations(); }));
 }
 function expandLocations() {
   const terms = [];
@@ -138,8 +138,8 @@ function expandLocations() {
 
 // ---- collect the run request (server fills unspecified profile fields with defaults) ----
 function collect() {
-  const num = (id) => { const v = ($(id)?.value || '').replace(/[^0-9.]/g, ''); return v === '' ? 0 : Number(v); };
-  const chk = (id) => !!$(id)?.checked;
+  const num = (id) => { const v = (($(id) as HTMLInputElement | null)?.value || '').replace(/[^0-9.]/g, ''); return v === '' ? 0 : Number(v); };
+  const chk = (id) => !!($(id) as HTMLInputElement | null)?.checked;
   return {
     filters: {
       locations: expandLocations(),
@@ -159,7 +159,7 @@ function collect() {
 // The strip stays hidden until a run starts; showRun keeps Scry mounted beneath it rather
 // than swapping to a full-page takeover, so the prior results remain visible while scanning.
 function showRun(on) { if (on) showScry(); $('runview').hidden = !on; }
-function setRunButtons(disabled) { for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) { const b = $(id); if (b) b.disabled = disabled; } }
+function setRunButtons(disabled) { for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) { const b = $(id) as HTMLButtonElement | null; if (b) b.disabled = disabled; } }
 function resetLive() {
   $('runview').classList.remove('done');
   $('run-title').textContent = 'Starting…';
@@ -277,7 +277,7 @@ $('run').addEventListener('click', run);
 
 // ---- refresh: prune delisted jobs, then reload Scry ----
 async function doRefresh() {
-  const b = $('ctx-refresh'); const label = b ? b.textContent : '';
+  const b = $('ctx-refresh') as HTMLButtonElement | null; const label = b ? b.textContent : '';
   if (b) { b.disabled = true; b.textContent = 'Checking…'; }
   try {
     const res = await authFetch(api('refresh'), { method: 'POST' });
@@ -359,7 +359,7 @@ function openGuide() {
   const onKey = (e) => { if (e.key === 'Escape') close(); };
   document.addEventListener('keydown', onKey);
   host.addEventListener('click', (e) => {
-    const t = e.target;
+    const t = e.target as HTMLElement;
     if (t.classList.contains('jbg-backdrop') || t.closest('.jbg-x') || t.closest('.jbg-go')) close();
   });
 }
@@ -378,7 +378,7 @@ try { if (!localStorage.getItem(GUIDE_SEEN)) openGuide(); } catch { /* private m
 // ---- keyboard shortcuts: ? opens the guide, g then s/c/x switches rooms ----
 let gPending = 0;
 document.addEventListener('keydown', (e) => {
-  const t = e.target;
+  const t = e.target as HTMLElement | null;
   if (t && /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)) return; // don't hijack typing
   if (e.metaKey || e.ctrlKey || e.altKey) return;
   if (e.key === '?') { e.preventDefault(); openGuide(); return; }

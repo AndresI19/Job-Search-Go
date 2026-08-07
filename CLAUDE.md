@@ -38,7 +38,8 @@ Two halves:
   `api/results` (typed Scry rows), `api/listings` (table view), `api/refresh`, `api/saved`,
   `api/applicator/*` (Discern/apply: launch, status, trash, restore), `api/codex` (templates),
   `api/config`, `api/health`, `api/profile`, `api/preview`, `api/export`/`download`/`import`.
-- **Frontend** (`web/src`): `main.ts` (entry, @ts-nocheck), `scry.ts`, `conjure.ts`, `codex.ts` + their CSS.
+- **Frontend** (`web/src`): `main.ts` (entry), `scry.ts`, `conjure.ts`, `codex.ts` + their CSS. The whole
+  tree type-checks under `tsc --noEmit` — no `@ts-nocheck` escape hatch remains.
 
 ## Invariants that must not regress
 
