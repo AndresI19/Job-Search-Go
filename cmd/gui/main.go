@@ -585,13 +585,21 @@ func (s *server) scrapeSource(ctx context.Context, src source.Source, q watchlis
 		}
 		time.Sleep(2 * time.Second)
 	}
-	raw, err := s.apify.DatasetItems(ctx, started.DefaultDatasetID)
-	if err != nil {
+	// Normalize page-by-page rather than pulling the whole dataset first: the raw
+	// JSON for a full scrape dwarfs the listings it maps to, and holding all of it
+	// at once is what OOM-killed this container. Each batch is discarded as soon
+	// as it has been normalized. Normalize is a pure per-item map, so batching it
+	// yields exactly the same listings as one whole-dataset call.
+	var listings []model.Listing
+	if err := s.apify.EachDatasetPage(ctx, started.DefaultDatasetID, func(page []json.RawMessage) error {
+		listings = append(listings, src.Normalize(page)...)
+		return nil
+	}); err != nil {
 		return nil, fmt.Errorf("fetch: %w", err)
 	}
 	atomic.StoreInt64(done, int64(count)) // this source's slot is complete
 	onProgress()
-	return src.Normalize(raw), nil
+	return listings, nil
 }
 
 func (s *server) runReal(j *jobState, keywords string, p profile.Profile, count int) {
