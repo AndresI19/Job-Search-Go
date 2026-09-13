@@ -179,13 +179,46 @@ func (c *Client) Usage(ctx context.Context) (used, limit float64, err error) {
 	return resp.Data.Current.MonthlyUsageUsd, resp.Data.Limits.MaxMonthlyUsageUsd, nil
 }
 
+// datasetPageSize bounds how many dataset items a single request pulls. Apify
+// will return an entire dataset in one response, but a full scrape then lands as
+// one slice holding every raw item at once — the allocation that OOM-killed the
+// container at its 256Mi limit. Paging lets a caller normalize and discard each
+// batch, so peak memory tracks the page size rather than the size of the run.
+const datasetPageSize = 250
+
+// EachDatasetPage walks datasetID in pages, handing each batch of raw items to
+// fn. It stops at the first short page — Apify's signal that the dataset is
+// exhausted — or at the first error fn returns. Prefer this over DatasetItems
+// wherever items can be processed incrementally.
+func (c *Client) EachDatasetPage(ctx context.Context, datasetID string, fn func([]json.RawMessage) error) error {
+	for offset := 0; ; offset += datasetPageSize {
+		url := fmt.Sprintf("%s/datasets/%s/items?clean=true&format=json&limit=%d&offset=%d",
+			c.baseURL, datasetID, datasetPageSize, offset)
+		var page []json.RawMessage
+		if err := c.do(ctx, http.MethodGet, url, nil, &page); err != nil {
+			return fmt.Errorf("fetch dataset: %w", err)
+		}
+		if len(page) > 0 {
+			if err := fn(page); err != nil {
+				return err
+			}
+		}
+		if len(page) < datasetPageSize {
+			return nil
+		}
+	}
+}
+
 // DatasetItems fetches every item of datasetID as raw JSON objects, leaving
-// field mapping to the caller (the normalizer).
+// field mapping to the caller (the normalizer). It holds the whole dataset in
+// memory; callers that can work batch-by-batch should use EachDatasetPage.
 func (c *Client) DatasetItems(ctx context.Context, datasetID string) ([]json.RawMessage, error) {
-	url := fmt.Sprintf("%s/datasets/%s/items?clean=true&format=json", c.baseURL, datasetID)
 	var items []json.RawMessage
-	if err := c.do(ctx, http.MethodGet, url, nil, &items); err != nil {
-		return nil, fmt.Errorf("fetch dataset: %w", err)
+	if err := c.EachDatasetPage(ctx, datasetID, func(page []json.RawMessage) error {
+		items = append(items, page...)
+		return nil
+	}); err != nil {
+		return nil, err
 	}
 	return items, nil
 }

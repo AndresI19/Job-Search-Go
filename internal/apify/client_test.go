@@ -4,8 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -99,5 +102,151 @@ func TestUsageLimit(t *testing.T) {
 	c := New("tkn", WithBaseURL(srv.URL))
 	if _, err := c.Run(context.Background(), "test-actor", map[string]any{}); !errors.Is(err, ErrUsageLimit) {
 		t.Fatalf("Run error = %v, want wrapped ErrUsageLimit", err)
+	}
+}
+
+// TestDatasetPaging checks a dataset larger than one page is walked in
+// limit/offset batches and reassembled in order — the whole point being that no
+// single request pulls the entire dataset into memory (which OOM-killed the
+// container when a full scrape landed as one allocation).
+func TestDatasetPaging(t *testing.T) {
+	const total = datasetPageSize*2 + 7 // two full pages plus a short final one
+	var gotOffsets []int
+	var maxPage int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.Query()
+		if q.Get("clean") != "true" {
+			t.Errorf("clean = %q, want true", q.Get("clean"))
+		}
+		limit, _ := strconv.Atoi(q.Get("limit"))
+		offset, _ := strconv.Atoi(q.Get("offset"))
+		if limit != datasetPageSize {
+			t.Errorf("limit = %d, want %d", limit, datasetPageSize)
+		}
+		gotOffsets = append(gotOffsets, offset)
+
+		n := total - offset
+		if n > limit {
+			n = limit
+		}
+		if n < 0 {
+			n = 0
+		}
+		if n > maxPage {
+			maxPage = n
+		}
+		items := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			items = append(items, fmt.Sprintf(`{"title":"job-%d"}`, offset+i))
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(items, ",") + "]"))
+	}))
+	defer srv.Close()
+
+	c := New("tkn", WithBaseURL(srv.URL))
+
+	// EachDatasetPage streams: every batch must be bounded by the page size.
+	var streamed int
+	var batches int
+	if err := c.EachDatasetPage(context.Background(), "DS1", func(page []json.RawMessage) error {
+		batches++
+		if len(page) > datasetPageSize {
+			t.Errorf("batch of %d items exceeds page size %d", len(page), datasetPageSize)
+		}
+		streamed += len(page)
+		return nil
+	}); err != nil {
+		t.Fatalf("EachDatasetPage: %v", err)
+	}
+	if streamed != total {
+		t.Errorf("streamed %d items, want %d", streamed, total)
+	}
+	if batches != 3 {
+		t.Errorf("got %d batches, want 3", batches)
+	}
+	if want := []int{0, datasetPageSize, datasetPageSize * 2}; !slices.Equal(gotOffsets, want) {
+		t.Errorf("offsets = %v, want %v", gotOffsets, want)
+	}
+
+	// DatasetItems reassembles the same dataset, in order, from those pages.
+	gotOffsets = nil
+	items, err := c.DatasetItems(context.Background(), "DS1")
+	if err != nil {
+		t.Fatalf("DatasetItems: %v", err)
+	}
+	if len(items) != total {
+		t.Fatalf("got %d items, want %d", len(items), total)
+	}
+	for _, i := range []int{0, datasetPageSize, total - 1} {
+		if want := fmt.Sprintf(`"job-%d"`, i); !strings.Contains(string(items[i]), want) {
+			t.Errorf("items[%d] = %s, want it to contain %s", i, items[i], want)
+		}
+	}
+}
+
+// TestDatasetPagingExact checks the boundary where the dataset is an exact
+// multiple of the page size: the walk needs one extra empty request to learn it
+// is done, and must not emit an empty batch or loop forever.
+func TestDatasetPagingExact(t *testing.T) {
+	const total = datasetPageSize
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests++
+		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
+		n := total - offset
+		if n < 0 {
+			n = 0
+		}
+		items := make([]string, 0, n)
+		for i := 0; i < n; i++ {
+			items = append(items, `{"title":"t"}`)
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(items, ",") + "]"))
+	}))
+	defer srv.Close()
+
+	c := New("tkn", WithBaseURL(srv.URL))
+	batches := 0
+	if err := c.EachDatasetPage(context.Background(), "DS1", func(page []json.RawMessage) error {
+		if len(page) == 0 {
+			t.Error("fn called with an empty batch")
+		}
+		batches++
+		return nil
+	}); err != nil {
+		t.Fatalf("EachDatasetPage: %v", err)
+	}
+	if batches != 1 {
+		t.Errorf("got %d batches, want 1", batches)
+	}
+	if requests != 2 {
+		t.Errorf("got %d requests, want 2 (full page, then the empty page that ends it)", requests)
+	}
+}
+
+// TestDatasetPagingStopsOnError checks a callback error aborts the walk instead
+// of paging through the rest of the dataset.
+func TestDatasetPagingStopsOnError(t *testing.T) {
+	requests := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		items := make([]string, 0, datasetPageSize)
+		for i := 0; i < datasetPageSize; i++ {
+			items = append(items, `{"title":"t"}`)
+		}
+		_, _ = w.Write([]byte("[" + strings.Join(items, ",") + "]"))
+	}))
+	defer srv.Close()
+
+	boom := errors.New("boom")
+	c := New("tkn", WithBaseURL(srv.URL))
+	if err := c.EachDatasetPage(context.Background(), "DS1", func([]json.RawMessage) error {
+		return boom
+	}); !errors.Is(err, boom) {
+		t.Fatalf("error = %v, want %v", err, boom)
+	}
+	if requests != 1 {
+		t.Errorf("made %d requests, want 1 (walk should stop at the failing batch)", requests)
 	}
 }
