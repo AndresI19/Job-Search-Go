@@ -120,6 +120,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"api/config", s.config)
+	// The scan preflight: what the page asks before offering the button.
+	mux.HandleFunc(base+"api/budget", s.budgetHandler)
 	mux.HandleFunc(base+"api/profile", s.profile)
 	mux.HandleFunc(base+"api/preview", s.preview)
 	mux.HandleFunc(base+"api/download", s.download)
@@ -234,6 +236,17 @@ func (s *server) enableLive() error {
 	s.realReady = true
 	s.spends = os.Getenv("APIFY_BASE_URL") == "" && os.Getenv("JUDGE_BACKEND") != "mock"
 	s.apify = apify.New(token, opts...)
+	s.minBudgetUSD = defaultMinBudgetUSD
+	if v := os.Getenv("APIFY_MIN_BUDGET_USD"); v != "" {
+		// A bad value is ignored rather than fatal, and says so. This bounds spending, so silently
+		// falling back to the default is far better than refusing to boot the whole service — but a
+		// typo that quietly disabled the guard would be the worst of the three outcomes.
+		if f, perr := strconv.ParseFloat(v, 64); perr == nil && f >= 0 {
+			s.minBudgetUSD = f
+		} else {
+			fmt.Fprintf(os.Stderr, "apify: ignoring APIFY_MIN_BUDGET_USD=%q (want a non-negative number), using $%.2f\n", v, s.minBudgetUSD)
+		}
+	}
 	s.resolver = ats.NewResolver(ats.NewCached(greenhouse.New()), ats.NewCached(lever.New()))
 	s.judge = jd
 	return nil
@@ -260,6 +273,19 @@ type server struct {
 	judge      judge.Judge
 	summarizer summarize.Summarizer // nil = Applicator summaries unavailable
 	sumModel   string               // model id summaries are tagged with
+	// Remaining Apify budget, in USD, below which a real run is refused rather than started.
+	// See defaultMinBudgetUSD; overridable with APIFY_MIN_BUDGET_USD.
+	minBudgetUSD float64
+
+	// The last budget read from Apify, cached. Every page load asks whether the account still has
+	// money, and without a cache that is one Apify request per visitor per load for a figure that
+	// moves only when a scan runs. The TTL is short enough that the banner clears soon after a
+	// cycle rolls over, and the run path invalidates it directly so a scan's own spend shows up
+	// immediately rather than up to a TTL later.
+	budgetMu  sync.Mutex
+	budgetVal apify.Budget
+	budgetAt  time.Time
+	budgetErr error
 
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
@@ -341,13 +367,19 @@ type jobState struct {
 	apifyTotal  int
 	verifyDone  int
 	verifyTotal int
-	rateUsed    float64 // Apify budget spent, USD
-	rateLimit   float64 // Apify budget cap, USD
-	errMsg      string
-	header      []string
-	rows        [][]string  // the run's result rows, populated on completion
-	stream      []resultDTO // verified rows appended AS they complete, for live SSE streaming
-	cfg         report.Config
+	// Apify month-to-date spend and cap, in USD, as last READ from Apify — never a guess. A zero
+	// rateLimit means "not measured yet", which the client renders as a dash rather than a number.
+	// This used to be seeded with a plausible-looking 0.19/5.00 "free-plan baseline", and that was
+	// the bug: the spend is incurred by the scrape at the START of a run while the figure was only
+	// refreshed at the END, so any run that died in between left a comfortable-looking 19¢ on screen
+	// while the real total climbed to the $5 cap. A number nobody measured is worse than no number.
+	rateUsed  float64
+	rateLimit float64
+	errMsg    string
+	header    []string
+	rows      [][]string  // the run's result rows, populated on completion
+	stream    []resultDTO // verified rows appended AS they complete, for live SSE streaming
+	cfg       report.Config
 }
 
 // snapshot renders the job's progress as JSON-ready data. Once done it also
@@ -375,6 +407,97 @@ func (j *jobState) snapshot() map[string]any {
 // and Indeed cap a public search near this anyway, so every run just pulls the
 // ceiling from every source — there is no user-facing job-count knob.
 const perBoardMax = 1000
+
+// The mock's invented budget figures. They exist so the $0 demo animates a plausible spend strip;
+// they are NOT a default for real runs, which show only what was read from Apify.
+const (
+	mockBudgetUsedUSD  = 0.19
+	mockBudgetLimitUSD = 5.00
+)
+
+// defaultMinBudgetUSD is how much of the Apify cap must remain before a real run is allowed to
+// start. It is not a safety margin for the run's own cost — at perBoardMax across two boards a run
+// has cost as much as $2, so reserving its full price would refuse most of a $5 monthly cap. It is
+// the threshold below which starting is pointless: Apify rejects the run once the cap is reached,
+// having already billed whatever the actor did first, so the scan spends and returns nothing.
+const defaultMinBudgetUSD = 0.10
+
+// How long a budget reading is reused before Apify is asked again. Short, because the figure it
+// gates on is money; long enough that a page open in several tabs is not a request per tab per load.
+const budgetCacheTTL = 90 * time.Second
+
+// budget returns the account's Apify budget, cached for budgetCacheTTL.
+//
+// On an error it returns the previous good reading if there is one, alongside the error — a
+// transient Apify blip should leave the banner showing the last thing we knew rather than blanking
+// it, which would read as "budget fine" at exactly the wrong moment.
+func (s *server) budget(ctx context.Context) (apify.Budget, error) {
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+	if s.apify == nil {
+		return apify.Budget{}, nil
+	}
+	if !s.budgetAt.IsZero() && time.Since(s.budgetAt) < budgetCacheTTL {
+		return s.budgetVal, s.budgetErr
+	}
+	b, err := s.apify.Budget(ctx)
+	s.budgetAt = time.Now()
+	s.budgetErr = err
+	if err == nil {
+		s.budgetVal = b
+	}
+	return s.budgetVal, err
+}
+
+// invalidateBudget forces the next read to go to Apify. Called when a run finishes, because that run
+// is exactly what changed the number and waiting out the TTL would show a stale one.
+func (s *server) invalidateBudget() {
+	s.budgetMu.Lock()
+	s.budgetAt = time.Time{}
+	s.budgetMu.Unlock()
+}
+
+// budgetHandler is the preflight the page calls before anyone clicks Scan, so an account with no
+// Apify credit left says so up front instead of after a click that cannot work.
+//
+// `applies` is the important field. A guest runs the $0 mock and never touches this budget, so
+// showing them "out of credit" would be alarming and wrong — the client only surfaces the notice
+// when the budget actually governs what THIS caller's scan would do.
+func (s *server) budgetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	admin := false
+	if s.auth != nil {
+		admin = s.auth.IsAdmin(r)
+	}
+	// Mirrors the run handler's decision: only a caller whose scan would be REAL is governed by it.
+	applies := s.realReady && (admin || s.userID(r) != "")
+
+	out := map[string]any{"applies": applies, "known": false, "minRequired": s.minBudgetUSD}
+	if !applies {
+		writeJSON(w, out)
+		return
+	}
+
+	b, err := s.budget(r.Context())
+	if err != nil && !b.Known() {
+		// Unknown, not zero. The client renders nothing rather than a scary or a falsely
+		// reassuring number — the same rule the run strip follows.
+		writeJSON(w, out)
+		return
+	}
+	out["known"] = b.Known()
+	out["used"] = b.UsedUSD
+	out["limit"] = b.LimitUSD
+	out["remaining"] = b.Remaining()
+	out["exhausted"] = b.Known() && b.Remaining() < s.minBudgetUSD
+	if !b.CycleEnd.IsZero() {
+		out["resetsAt"] = b.CycleEnd.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, out)
+}
 
 // runReq is a run's POST body: the profile, the requested job count, the selected
 // field (mapped to a curated all-roles keyword query), the role, and how many
@@ -507,12 +630,48 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		// comes from the request-body role while signedIn (DEV_USER_ID) is usually unset.
 		real := s.realReady && (admin || signedIn)
 		id := "job-" + strconv.FormatInt(s.jobSeq.Add(1), 10)
+		// Read the budget BEFORE launching anything, for two reasons that used to be one bug each:
+		// it is what lets a run that dies mid-flight still show the real pre-run spend, and it is
+		// the only moment we can still refuse. A scrape spends within seconds of starting, so a
+		// check made any later is a check made after the money is gone.
+		//
+		// Only for real runs: the mock touches no Apify account and has no budget to read.
+		var preUsed, preLimit float64
+		if real {
+			b, uerr := s.budget(r.Context())
+			u, l := b.UsedUSD, b.LimitUSD
+			switch {
+			case uerr != nil && !b.Known():
+				// FAIL OPEN. An Apify API blip must not become an outage of the scan button, and the
+				// run will fail at Apify anyway if the budget really is gone. The job keeps a zero
+				// limit, so the strip shows a dash rather than inventing a figure.
+				fmt.Fprintf(os.Stderr, "apify: could not read usage before the run: %v\n", uerr)
+			case l > 0 && l-u < s.minBudgetUSD:
+				// Refuse rather than spend into a wall. Apify rejects the run once the cap is hit,
+				// but not before billing whatever the actor already did, so "it would have failed
+				// anyway" is not the same as "it would have cost nothing".
+				w.Header().Set("Retry-After", "86400")
+				// State the REMAINDER, because that is what the decision turns on. Reporting only
+				// "$5.00 of $5.00 used" is both less useful and slightly wrong at the boundary: two
+				// decimal places round $4.9998 up to the cap, so the figure that explains the
+				// refusal has to be the one the comparison actually used.
+				http.Error(w, fmt.Sprintf(
+					"Apify budget spent: $%.2f of the $%.2f monthly cap used this cycle, leaving $%.2f — "+
+						"a scan needs at least $%.2f. The cap resets at the start of the next Apify billing cycle.",
+					u, l, l-u, s.minBudgetUSD), http.StatusPaymentRequired)
+				return
+			default:
+				preUsed, preLimit = u, l
+			}
+		}
+
 		j := &jobState{
 			id: id, spends: real && s.spends, status: "running", phase: "apify",
 			// Real runs fan out to every board, so the target is the ceiling × sources;
 			// the mock path overrides these with the actual cached-row count.
 			apifyTotal: count * len(source.All()), verifyTotal: count * len(source.All()),
-			rateUsed: 0.19, rateLimit: 5.00, // free-plan baseline
+			// Measured above, or left zero when unknown. Never a placeholder.
+			rateUsed: preUsed, rateLimit: preLimit,
 			cfg: report.ConfigFrom(p),
 		}
 
@@ -641,6 +800,12 @@ func (s *server) runStream(w http.ResponseWriter, r *http.Request) {
 // body with ingest → verify calls that drive the same jobState fields.
 func (s *server) runMock(j *jobState, rows [][]string) {
 	n := len(rows)
+	// The mock's own invented budget, set HERE rather than seeded into every job. It is fiction, and
+	// it belongs on the path that is openly a demo — a real run now shows only what was measured, so
+	// the two can no longer be confused for one another.
+	j.mu.Lock()
+	j.rateUsed, j.rateLimit = mockBudgetUsedUSD, mockBudgetLimitUSD
+	j.mu.Unlock()
 	// The mock streams the CANNED demo cache (never any real user's results): a guest with no
 	// identity sees a fixed sample, capped to the animated count and marked new so it pins to top.
 	demo := s.cachedDTOs()
@@ -738,7 +903,35 @@ func (s *server) scrapeSource(ctx context.Context, src source.Source, q watchlis
 
 func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile, count int) {
 	ctx := context.Background()
+
+	// Re-read the spend from Apify and publish it on the job. Called on EVERY exit from this
+	// function, not just the happy one: the scrape bills at the start of a run, so a run that fails
+	// afterwards has still spent — and leaving the strip on the pre-run figure would under-report it
+	// by exactly the amount that just went out the door. Best-effort; a failed read leaves the
+	// pre-run numbers, which were themselves measured.
+	refreshUsage := func() {
+		// Straight to Apify, bypassing the cache: this runs at the moments the number has just
+		// changed, and a cached reading here would report the spend as it was BEFORE this run's own
+		// scrape — the precise staleness this whole change exists to remove. The shared cache is
+		// then dropped so the next page load sees the new figure rather than waiting out its TTL.
+		b, err := s.apify.Budget(ctx)
+		if err != nil || !b.Known() {
+			// The read failed at the one moment the number is known to have moved, so whatever is
+			// cached is now definitely stale. Drop it rather than serve it for the rest of the TTL:
+			// the next page load pays one Apify request and gets the truth.
+			s.invalidateBudget()
+			return
+		}
+		s.budgetMu.Lock()
+		s.budgetVal, s.budgetAt, s.budgetErr = b, time.Now(), nil
+		s.budgetMu.Unlock()
+		j.mu.Lock()
+		j.rateUsed, j.rateLimit = b.UsedUSD, b.LimitUSD
+		j.mu.Unlock()
+	}
+
 	fail := func(msg string) {
+		refreshUsage()
 		j.mu.Lock()
 		j.status, j.errMsg = "error", msg
 		j.mu.Unlock()
@@ -801,6 +994,12 @@ func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile
 		fmt.Fprintf(os.Stderr, "scrape: partial results — %s\n", strings.Join(errs, "; "))
 	}
 
+	// The scrape is over, which means the spending is over — everything after this is ATS lookups
+	// and Gemini, both free. Re-read here rather than only at the end so the strip is accurate for
+	// the whole verify phase, which is the long one: a run spends in its first seconds and then
+	// shows the result of that spend for several minutes.
+	refreshUsage()
+
 	// Collapse the same job cross-posted to both boards before verifying.
 	listings, _ := source.Dedup(merged)
 	j.mu.Lock()
@@ -833,13 +1032,11 @@ func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile
 	}
 
 	rows := filter.Apply(output.Header(), output.Rows(results), p.Filters, p.EstimateSalary, time.Now())
-	used, limit, _ := s.apify.Usage(ctx)
+	// A final read, so a long verify that straddled a billing event still ends on the true figure.
+	refreshUsage()
 
 	j.mu.Lock()
 	j.rows = rows
-	if limit > 0 {
-		j.rateUsed, j.rateLimit = used, limit
-	}
 	j.status, j.phase = "done", "done"
 	j.mu.Unlock()
 	s.setLast(j.header, rows)

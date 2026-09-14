@@ -158,10 +158,34 @@ func (c *Client) DatasetInfo(ctx context.Context, datasetID string) (int, error)
 	return resp.Data.ItemCount, nil
 }
 
-// Usage returns the account's month-to-date Apify spend and its cap, in USD, for
-// a remaining-budget indicator. Best-effort: a response shape Apify changes just
-// yields zeros rather than an error the caller must handle.
-func (c *Client) Usage(ctx context.Context) (used, limit float64, err error) {
+// Budget is the account's month-to-date Apify spend against its cap, and when that cap rolls over.
+//
+// CycleEnd matters as much as the numbers: "you have spent your budget" is a dead end, while "you
+// have spent your budget, it resets on the 29th" is something the reader can act on. Apify reports
+// the cycle alongside the usage, so carrying it costs nothing.
+type Budget struct {
+	UsedUSD  float64
+	LimitUSD float64
+	CycleEnd time.Time // zero when Apify did not report a cycle
+}
+
+// Remaining is what is left to spend. Negative is clamped away: a cap can be fractionally exceeded
+// by a run already in flight, and "-$0.01 left" is a worse thing to render than "$0.00 left".
+func (b Budget) Remaining() float64 {
+	if r := b.LimitUSD - b.UsedUSD; r > 0 {
+		return r
+	}
+	return 0
+}
+
+// Known reports whether the figures mean anything. A zero limit is how an unreadable or unreported
+// budget travels through the system, and every consumer must be able to tell that from "zero left".
+func (b Budget) Known() bool { return b.LimitUSD > 0 }
+
+// Budget returns the account's month-to-date Apify spend, its cap, and the cycle end. Best-effort on
+// shape: fields Apify renames come back zero, which Known() reports as unknown, rather than as an
+// error every caller has to distinguish from a real one.
+func (c *Client) Budget(ctx context.Context) (Budget, error) {
 	url := fmt.Sprintf("%s/users/me/limits", c.baseURL)
 	var resp struct {
 		Data struct {
@@ -171,12 +195,24 @@ func (c *Client) Usage(ctx context.Context) (used, limit float64, err error) {
 			Limits struct {
 				MaxMonthlyUsageUsd float64 `json:"maxMonthlyUsageUsd"`
 			} `json:"limits"`
+			MonthlyUsageCycle struct {
+				EndAt string `json:"endAt"`
+			} `json:"monthlyUsageCycle"`
 		} `json:"data"`
 	}
 	if err := c.do(ctx, http.MethodGet, url, nil, &resp); err != nil {
-		return 0, 0, err
+		return Budget{}, err
 	}
-	return resp.Data.Current.MonthlyUsageUsd, resp.Data.Limits.MaxMonthlyUsageUsd, nil
+	b := Budget{
+		UsedUSD:  resp.Data.Current.MonthlyUsageUsd,
+		LimitUSD: resp.Data.Limits.MaxMonthlyUsageUsd,
+	}
+	// An unparseable date leaves CycleEnd zero rather than failing the whole read — the spend
+	// figures are the load-bearing part, and the reset date is a nicety on top of them.
+	if t, perr := time.Parse(time.RFC3339, resp.Data.MonthlyUsageCycle.EndAt); perr == nil {
+		b.CycleEnd = t
+	}
+	return b, nil
 }
 
 // datasetPageSize bounds how many dataset items a single request pulls. Apify

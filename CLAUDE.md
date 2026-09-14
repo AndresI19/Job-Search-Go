@@ -49,6 +49,17 @@ Two halves:
 - **Access tiers.** Guest = the $0 **mock** (canned cache) + `MockSummarizer`. Signed-in user = the **REAL**
   pipeline, scan capped to **one per week** (bounds Apify spend), **Discern unlimited** (Gemini is free).
   Admin = real, unbounded. `real := realReady && (admin || signedIn)`; the weekly quota gates non-admins.
+- **The Apify budget is measured, never assumed, and gates the run.** A real run reads
+  `users/me/limits` **before** launching: if the remaining cap is under `APIFY_MIN_BUDGET_USD`
+  (default `defaultMinBudgetUSD`, $0.10) it is refused with **402** rather than started. That read
+  also seeds the strip, and it is re-read after the scrape and again at the end — including on the
+  failure path, because the scrape bills in the first seconds. A read that errors **fails open** (the
+  scan proceeds) and leaves `rateLimit` at 0, which the client renders as a dash. Admin is *not* an
+  exemption: the cap is the account's, not the user's. **Never seed a spend figure with a
+  placeholder** — an invented "0.19/5.00 baseline" combined with an end-of-run-only refresh is what
+  let $5 be spent behind a strip reading 19¢, because every run in between died before the refresh.
+  The mock keeps its own invented numbers (`mockBudgetUsedUSD`), set inside `runMock`, where they are
+  openly fiction.
 - **Per-identity data.** `listings` and `runs` are **owner-scoped** (`user_id`, dedup `(user_id, url)`);
   every read/write/join scopes to the caller. A guest (no identity) is served the **canned demo cache**,
   never the pool — one user's runs never reach another.
