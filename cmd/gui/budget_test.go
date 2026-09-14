@@ -167,3 +167,94 @@ func TestBudgetGuardThresholdIsTheRemainder(t *testing.T) {
 			w.Code, defaultMinBudgetUSD)
 	}
 }
+
+// --- the preflight endpoint ---
+
+func getBudget(t *testing.T, s *server) (int, map[string]any) {
+	t.Helper()
+	w := httptest.NewRecorder()
+	s.budgetHandler(w, httptest.NewRequest(http.MethodGet, "/api/budget", nil))
+	var out map[string]any
+	_ = json.Unmarshal(w.Body.Bytes(), &out)
+	return w.Code, out
+}
+
+func TestBudgetPreflightReportsAnExhaustedAccount(t *testing.T) {
+	api := fakeApify(t, 4.9998, 5.00, http.StatusOK)
+	s := budgetServer(t, api, defaultMinBudgetUSD)
+	// With no auth verifier, userID falls back to DEV_USER_ID — so setting it is how this test
+	// stands in for a signed-in caller, whose scan the budget actually governs.
+	t.Setenv("DEV_USER_ID", "dev-user")
+
+	code, out := getBudget(t, s)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", code)
+	}
+	if out["applies"] != true || out["known"] != true {
+		t.Fatalf("applies/known = %v/%v, want true/true (%v)", out["applies"], out["known"], out)
+	}
+	if out["exhausted"] != true {
+		t.Errorf("exhausted = %v, want true at $4.9998 of $5.00", out["exhausted"])
+	}
+	// The reset date is what makes the notice actionable rather than a dead end.
+	if s, _ := out["resetsAt"].(string); !strings.HasPrefix(s, "2026-") && s != "" {
+		t.Errorf("resetsAt = %q, want an RFC3339 instant", s)
+	}
+}
+
+func TestBudgetPreflightDoesNotApplyToAGuest(t *testing.T) {
+	// The case that matters most to get right: a guest runs the $0 mock and never touches this
+	// budget. Telling them "out of credit" would be alarming, wrong, and would disable a button
+	// that works perfectly for them.
+	api := fakeApify(t, 4.9998, 5.00, http.StatusOK)
+	s := budgetServer(t, api, defaultMinBudgetUSD)
+	t.Setenv("DEV_USER_ID", "") // no identity at all — the guest case
+
+	_, out := getBudget(t, s)
+	if out["applies"] != false {
+		t.Errorf("applies = %v, want false for a caller whose scan is the mock", out["applies"])
+	}
+	if _, leaked := out["used"]; leaked {
+		t.Error("a guest was told the account's spend; the budget does not govern their scan")
+	}
+}
+
+func TestBudgetPreflightReportsUnknownRatherThanZero(t *testing.T) {
+	api := fakeApify(t, 0, 0, http.StatusInternalServerError)
+	s := budgetServer(t, api, defaultMinBudgetUSD)
+	t.Setenv("DEV_USER_ID", "dev-user")
+
+	_, out := getBudget(t, s)
+	if out["known"] != false {
+		t.Errorf("known = %v, want false — an unreadable budget is not a spent one", out["known"])
+	}
+	if out["exhausted"] == true {
+		t.Error("an unreadable budget must not report as exhausted; that would block scans on an API blip")
+	}
+}
+
+func TestBudgetIsCachedAndInvalidatedByARun(t *testing.T) {
+	var calls int
+	mux := http.NewServeMux()
+	mux.HandleFunc("/users/me/limits", func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		_, _ = fmt.Fprint(w, `{"data":{"current":{"monthlyUsageUsd":1},"limits":{"maxMonthlyUsageUsd":5}}}`)
+	})
+	srv := httptest.NewServer(mux)
+	defer srv.Close()
+	s := budgetServer(t, srv, defaultMinBudgetUSD)
+	t.Setenv("DEV_USER_ID", "dev-user")
+
+	for i := 0; i < 5; i++ {
+		getBudget(t, s)
+	}
+	if calls != 1 {
+		t.Errorf("hit Apify %d times for 5 page loads, want 1 — the reading is cached", calls)
+	}
+	// A run changes the number, so the cache must not outlive it.
+	s.invalidateBudget()
+	getBudget(t, s)
+	if calls != 2 {
+		t.Errorf("calls = %d after invalidation, want 2 — a finished run must refresh the figure", calls)
+	}
+}

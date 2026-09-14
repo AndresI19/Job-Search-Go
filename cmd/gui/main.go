@@ -120,6 +120,8 @@ func main() {
 
 	mux := http.NewServeMux()
 	mux.HandleFunc(base+"api/config", s.config)
+	// The scan preflight: what the page asks before offering the button.
+	mux.HandleFunc(base+"api/budget", s.budgetHandler)
 	mux.HandleFunc(base+"api/profile", s.profile)
 	mux.HandleFunc(base+"api/preview", s.preview)
 	mux.HandleFunc(base+"api/download", s.download)
@@ -275,6 +277,16 @@ type server struct {
 	// See defaultMinBudgetUSD; overridable with APIFY_MIN_BUDGET_USD.
 	minBudgetUSD float64
 
+	// The last budget read from Apify, cached. Every page load asks whether the account still has
+	// money, and without a cache that is one Apify request per visitor per load for a figure that
+	// moves only when a scan runs. The TTL is short enough that the banner clears soon after a
+	// cycle rolls over, and the run path invalidates it directly so a scan's own spend shows up
+	// immediately rather than up to a TTL later.
+	budgetMu  sync.Mutex
+	budgetVal apify.Budget
+	budgetAt  time.Time
+	budgetErr error
+
 	jobsMu sync.Mutex
 	jobs   map[string]*jobState
 	jobSeq atomic.Int64
@@ -409,6 +421,83 @@ const (
 // the threshold below which starting is pointless: Apify rejects the run once the cap is reached,
 // having already billed whatever the actor did first, so the scan spends and returns nothing.
 const defaultMinBudgetUSD = 0.10
+
+// How long a budget reading is reused before Apify is asked again. Short, because the figure it
+// gates on is money; long enough that a page open in several tabs is not a request per tab per load.
+const budgetCacheTTL = 90 * time.Second
+
+// budget returns the account's Apify budget, cached for budgetCacheTTL.
+//
+// On an error it returns the previous good reading if there is one, alongside the error — a
+// transient Apify blip should leave the banner showing the last thing we knew rather than blanking
+// it, which would read as "budget fine" at exactly the wrong moment.
+func (s *server) budget(ctx context.Context) (apify.Budget, error) {
+	s.budgetMu.Lock()
+	defer s.budgetMu.Unlock()
+	if s.apify == nil {
+		return apify.Budget{}, nil
+	}
+	if !s.budgetAt.IsZero() && time.Since(s.budgetAt) < budgetCacheTTL {
+		return s.budgetVal, s.budgetErr
+	}
+	b, err := s.apify.Budget(ctx)
+	s.budgetAt = time.Now()
+	s.budgetErr = err
+	if err == nil {
+		s.budgetVal = b
+	}
+	return s.budgetVal, err
+}
+
+// invalidateBudget forces the next read to go to Apify. Called when a run finishes, because that run
+// is exactly what changed the number and waiting out the TTL would show a stale one.
+func (s *server) invalidateBudget() {
+	s.budgetMu.Lock()
+	s.budgetAt = time.Time{}
+	s.budgetMu.Unlock()
+}
+
+// budgetHandler is the preflight the page calls before anyone clicks Scan, so an account with no
+// Apify credit left says so up front instead of after a click that cannot work.
+//
+// `applies` is the important field. A guest runs the $0 mock and never touches this budget, so
+// showing them "out of credit" would be alarming and wrong — the client only surfaces the notice
+// when the budget actually governs what THIS caller's scan would do.
+func (s *server) budgetHandler(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	admin := false
+	if s.auth != nil {
+		admin = s.auth.IsAdmin(r)
+	}
+	// Mirrors the run handler's decision: only a caller whose scan would be REAL is governed by it.
+	applies := s.realReady && (admin || s.userID(r) != "")
+
+	out := map[string]any{"applies": applies, "known": false, "minRequired": s.minBudgetUSD}
+	if !applies {
+		writeJSON(w, out)
+		return
+	}
+
+	b, err := s.budget(r.Context())
+	if err != nil && !b.Known() {
+		// Unknown, not zero. The client renders nothing rather than a scary or a falsely
+		// reassuring number — the same rule the run strip follows.
+		writeJSON(w, out)
+		return
+	}
+	out["known"] = b.Known()
+	out["used"] = b.UsedUSD
+	out["limit"] = b.LimitUSD
+	out["remaining"] = b.Remaining()
+	out["exhausted"] = b.Known() && b.Remaining() < s.minBudgetUSD
+	if !b.CycleEnd.IsZero() {
+		out["resetsAt"] = b.CycleEnd.UTC().Format(time.RFC3339)
+	}
+	writeJSON(w, out)
+}
 
 // runReq is a run's POST body: the profile, the requested job count, the selected
 // field (mapped to a curated all-roles keyword query), the role, and how many
@@ -549,9 +638,10 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 		// Only for real runs: the mock touches no Apify account and has no budget to read.
 		var preUsed, preLimit float64
 		if real {
-			u, l, uerr := s.apify.Usage(r.Context())
+			b, uerr := s.budget(r.Context())
+			u, l := b.UsedUSD, b.LimitUSD
 			switch {
-			case uerr != nil:
+			case uerr != nil && !b.Known():
 				// FAIL OPEN. An Apify API blip must not become an outage of the scan button, and the
 				// run will fail at Apify anyway if the budget really is gone. The job keeps a zero
 				// limit, so the strip shows a dash rather than inventing a figure.
@@ -820,12 +910,23 @@ func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile
 	// by exactly the amount that just went out the door. Best-effort; a failed read leaves the
 	// pre-run numbers, which were themselves measured.
 	refreshUsage := func() {
-		used, limit, err := s.apify.Usage(ctx)
-		if err != nil || limit <= 0 {
+		// Straight to Apify, bypassing the cache: this runs at the moments the number has just
+		// changed, and a cached reading here would report the spend as it was BEFORE this run's own
+		// scrape — the precise staleness this whole change exists to remove. The shared cache is
+		// then dropped so the next page load sees the new figure rather than waiting out its TTL.
+		b, err := s.apify.Budget(ctx)
+		if err != nil || !b.Known() {
+			// The read failed at the one moment the number is known to have moved, so whatever is
+			// cached is now definitely stale. Drop it rather than serve it for the rest of the TTL:
+			// the next page load pays one Apify request and gets the truth.
+			s.invalidateBudget()
 			return
 		}
+		s.budgetMu.Lock()
+		s.budgetVal, s.budgetAt, s.budgetErr = b, time.Now(), nil
+		s.budgetMu.Unlock()
 		j.mu.Lock()
-		j.rateUsed, j.rateLimit = used, limit
+		j.rateUsed, j.rateLimit = b.UsedUSD, b.LimitUSD
 		j.mu.Unlock()
 	}
 

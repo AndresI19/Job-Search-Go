@@ -159,14 +159,59 @@ function collect() {
 // The strip stays hidden until a run starts; showRun keeps Scry mounted beneath it rather
 // than swapping to a full-page takeover, so the prior results remain visible while scanning.
 function showRun(on) { if (on) showScry(); $('runview').hidden = !on; }
-function setRunButtons(disabled) { for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) { const b = $(id) as HTMLButtonElement | null; if (b) b.disabled = disabled; } }
+// Set by the scan preflight: true when this visitor's scan WOULD be real and the Apify cap is spent.
+// setRunButtons consults it so that finishing a run — which calls setRunButtons(false) — cannot
+// re-enable a button that still has nothing to spend.
+let budgetBlocked = false;
+
+function setRunButtons(disabled) {
+  for (const id of ['run', 'ctx-newsearch', 'ctx-refresh']) {
+    const b = $(id) as HTMLButtonElement | null;
+    if (b) b.disabled = disabled || (budgetBlocked && id === 'run');
+  }
+}
+
+/**
+ * Ask the server whether a live scan is affordable, before offering the button.
+ *
+ * Without this the only way to learn the account is out of credit is to click Scan and read the
+ * error — and for most of a billing cycle the answer never changes, so that is a click spent
+ * learning something the server already knew. Guests are unaffected: their scan is the $0 mock, and
+ * the server says so with `applies: false` rather than making the client infer it from a role.
+ */
+async function refreshBudget() {
+  const note = $('budget-note');
+  try {
+    const res = role !== 'guest' ? await authFetch(api('budget')) : await fetch(api('budget'));
+    if (!res || !res.ok) return; // preflight is an enhancement; never block the UI on it failing
+    const b = await res.json();
+    budgetBlocked = Boolean(b.applies && b.known && b.exhausted);
+    if (note) {
+      note.hidden = !budgetBlocked;
+      if (budgetBlocked) {
+        const resets = b.resetsAt
+          ? ` Live scans resume when it resets on ${new Date(b.resetsAt).toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}.`
+          : '';
+        note.textContent = `Apify credit spent — $${(b.used ?? 0).toFixed(2)} of $${(b.limit ?? 0).toFixed(2)} used this cycle.${resets}`;
+      }
+    }
+  } catch {
+    // Offline or the endpoint is missing (an older server). Leave the button alone: refusing to
+    // scan because the preflight itself failed would be worse than the click it was meant to save.
+  } finally {
+    setRunButtons(false);
+  }
+}
 function resetLive() {
   $('runview').classList.remove('done');
   $('run-title').textContent = 'Starting…';
   $('live-done').textContent = '0'; $('live-total').textContent = '0';
   $('live-bar').style.width = '0%';
   $('run-note').hidden = true;
-  $('live-spend').textContent = '$0.00 / $5.00';
+  // A dash, not a placeholder pair. The strip starts out knowing nothing about the spend, and the
+  // first progress frame fills it in from a real reading — inventing "$0.00 / $5.00" here would put
+  // the same unmeasured number on screen that this whole path was fixed to stop showing.
+  $('live-spend').textContent = '— / —';
 }
 
 // Drive the live strip from a progress payload (shared by the SSE feed and the poll
@@ -193,6 +238,10 @@ function finishRun(scanned, shown) {
   toast(`Scanned <b>${scanned.toLocaleString()}</b> · <b>${shown.toLocaleString()}</b> matched`);
   setStatus('');
   setRunButtons(false);
+  // This run is what just moved the number, so re-ask rather than wait out the server's cache. It is
+  // how the notice appears immediately after the scan that exhausts the cap, instead of on the next
+  // page load.
+  void refreshBudget();
   // Let the green "done" strip land, then swap the streamed rows for the authoritative
   // reload (full aggregate, correct new-flags) — which also hides the strip.
   clearTimeout(pollTimer);
@@ -216,6 +265,14 @@ async function run() {
     if (res.status === 429) { // demo scan quota reached — informational, not an error
       toast(await res.text());
       showRun(false); reloadScry(); setRunButtons(false);
+      return;
+    }
+    if (res.status === 402) { // Apify cap spent — a condition, not a fault, like the quota above
+      toast(await res.text());
+      showRun(false); reloadScry();
+      // Re-run the preflight so the notice appears and the button stays down. Reaching here means
+      // the preflight had not run, was stale, or the cap was reached between it and this click.
+      await refreshBudget();
       return;
     }
     if (!res.ok) throw new Error(await res.text());
@@ -336,6 +393,10 @@ onIdentity(() => {
   role = isAdmin() ? 'admin' : isSignedIn() ? 'user' : 'guest';
   updateDemoUI();
   refreshTabCounts();
+  // Whether the Apify cap governs this visitor depends on WHO they are, so the preflight has to be
+  // re-asked on every identity change — signing in is exactly the moment a mock user becomes a
+  // real-scan user, and a guest signing out must have the notice cleared.
+  void refreshBudget();
   reloadScry(); // identity changed (sign in / out / switch) — refetch Scry under the NEW owner so the
   //             previous identity's results never linger on the grid.
   // On sign-in, carry any guest-made Codex templates up to the account.
@@ -347,6 +408,8 @@ fetch(api('config')).then((r) => r.json()).then((c) => {
   runCfg = c;
   role = isAdmin() ? 'admin' : isSignedIn() ? 'user' : 'guest';
   updateDemoUI();
+  void refreshBudget(); // the preflight: know before the button is offered, not after it is clicked
+
   fields = c.fields || [];
   selectedField = fields[0] ? fields[0].key : null;
   renderFields();

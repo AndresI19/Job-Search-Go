@@ -234,6 +234,19 @@
   .sp-row input[type=number] { width: 96px; text-align: right; background: var(--panel-2); color: var(--ink); border: 1px solid var(--line); border-radius: 7px; padding: 4px 8px; font: 500 13px/1 ui-monospace, monospace; }
   .sp-row input[type=checkbox] { width: 16px; height: 16px; accent-color: var(--accent); }
   .sp-run { width: 100%; margin-top: 5px; justify-content: center; }
+  /* The scan preflight's verdict, sitting directly above the button it explains. Deliberately not a
+     toast: a toast is for something that just happened, and this is a standing condition that lasts
+     until the billing cycle rolls over — it has to still be there when you come back tomorrow. */
+  .sp-budget {
+    margin: 8px 0 0;
+    padding: 7px 9px;
+    border-radius: 8px;
+    border: 1px solid color-mix(in srgb, var(--warn, #b4690e) 45%, transparent);
+    background: color-mix(in srgb, var(--warn, #b4690e) 12%, transparent);
+    color: var(--ink);
+    font-size: .82rem;
+    line-height: 1.35;
+  }
 
   .toast[hidden] { display: none; }
   .toast b { font-weight: 800; color: #fff; }
