@@ -179,7 +179,12 @@ function applyProgress(j) {
   $('live-total').textContent = (cur.total || 0).toLocaleString();
   $('live-bar').style.width = (cur.total ? Math.round((cur.done / cur.total) * 100) : 0) + '%';
   $('run-note').hidden = !j.spends; // the "Live" tag only when the run actually spends
-  $('live-spend').textContent = '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2);
+  // A zero limit means the server has not managed to read the budget from Apify, so show a dash.
+  // The strip used to open on an invented "$0.19 / $5.00" baseline and only correct itself if the
+  // run reached its final step — so a run that died partway left a reassuring figure on screen that
+  // nobody had measured, while the real spend climbed to the cap. An unknown must look unknown.
+  $('live-spend').textContent =
+    j.rate && j.rate.limit > 0 ? '$' + j.rate.used.toFixed(2) + ' / $' + j.rate.limit.toFixed(2) : '— / —';
 }
 function finishRun(scanned, shown) {
   $('runview').classList.add('done');
