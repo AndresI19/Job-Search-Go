@@ -258,11 +258,24 @@ async function openStream(id) {
         if (ended) { try { await reader.cancel(); } catch { /* already closing */ } return; }
       }
     }
-  } catch (e) { if (!ended) failRun(e.message); }
+    // The body ended without a terminal event. A scan runs for minutes, so this
+    // connection is long-lived enough that a tunnel blip, proxy timeout, or a
+    // laptop sleeping will eventually cut it — none of which harm the run, which
+    // lives on the server keyed by its id. Resume by polling rather than failing
+    // a scan that is still going (or has already finished).
+    if (!ended) return poll(id);
+  } catch {
+    // Same interruption, surfaced as a read error instead of a clean end.
+    if (!ended) return poll(id);
+  }
 }
 
 // Poll fallback: the same strip, no row streaming (the grid fills on done via reloadScry).
-async function poll(id) {
+// This is also where a cut stream lands, so one failed request must not end the run:
+// the same blip that dropped the stream can easily take a poll with it. Keep asking
+// for pollMisses attempts (~30s) before calling the run lost.
+const pollMisses = 30;
+async function poll(id, misses = 0) {
   try {
     const res = await fetch(api('run') + '?id=' + encodeURIComponent(id));
     if (!res.ok) throw new Error(await res.text());
@@ -271,7 +284,10 @@ async function poll(id) {
     if (j.status === 'done') { finishRun((j.verify && j.verify.total) || 0, (j.rows || []).length); return; }
     if (j.status === 'error') { failRun(j.error || 'run failed'); return; }
     pollTimer = setTimeout(() => poll(id), 350);
-  } catch (e) { failRun(e.message); }
+  } catch (e) {
+    if (misses < pollMisses) { pollTimer = setTimeout(() => poll(id, misses + 1), 1000); return; }
+    failRun(e.message);
+  }
 }
 $('run').addEventListener('click', run);
 
