@@ -133,9 +133,9 @@ func run() error {
 	for _, q := range wl.Queries {
 		logger.Info("ingesting query", "field", q.Field)
 		raw, err := client.Run(ctx, actorID, map[string]any{
-			"urls":          []string{q.SearchURL()},
-			"count":         *count,
-			"scrapeCompany": true,
+			"urls":           []string{q.SearchURL()},
+			"limitPerSource": *count, // the actor dropped "count" in Aug 2026
+			"scrapeCompany":  true,
 		})
 		if err != nil {
 			// On an Apify rate or usage/budget limit, stop ingesting and proceed
