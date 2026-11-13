@@ -35,8 +35,10 @@ type linkedinSource struct{ actorID string }
 func (linkedinSource) Name() string      { return linkedin.Source }
 func (s linkedinSource) ActorID() string { return s.actorID }
 func (linkedinSource) Input(q watchlist.Query, count int) any {
-	// The LinkedIn actor takes a search URL built from the query's filters.
-	return map[string]any{"urls": []string{q.SearchURL()}, "count": count, "scrapeCompany": true}
+	// The LinkedIn actor takes a search URL built from the query's filters. It caps results with
+	// limitPerSource (per input URL); it dropped "count" in Aug 2026 and now ignores it, which
+	// would scrape everything LinkedIn returns (~1000) and bill for all of it.
+	return map[string]any{"urls": []string{q.SearchURL()}, "limitPerSource": count, "scrapeCompany": true}
 }
 func (linkedinSource) Normalize(raw []json.RawMessage) []model.Listing {
 	return linkedin.Normalize(raw)

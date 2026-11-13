@@ -375,6 +375,10 @@ type jobState struct {
 	// while the real total climbed to the $5 cap. A number nobody measured is worse than no number.
 	rateUsed  float64
 	rateLimit float64
+	// liveSpend re-reads the spend from Apify on a timer while the run is live, so the strip tracks
+	// the money as it goes out rather than only at the end. Admin-only: it costs an Apify API call
+	// per tick, and the figure is the whole account's spend, which is the admin's business.
+	liveSpend bool
 	errMsg    string
 	header    []string
 	rows      [][]string  // the run's result rows, populated on completion
@@ -421,6 +425,26 @@ const (
 // the threshold below which starting is pointless: Apify rejects the run once the cap is reached,
 // having already billed whatever the actor did first, so the scan spends and returns nothing.
 const defaultMinBudgetUSD = 0.10
+
+// How often an admin's live run re-reads its spend from Apify. Apify books usage with a short
+// delay, so polling faster would mostly re-read the same figure; slower would leave a whole
+// scrape's spend off screen.
+var liveSpendInterval = 15 * time.Second
+
+// watchSpend calls refresh every interval until stop is closed. It is the live-run half of the
+// spend display: runReal already refreshes on every exit, this keeps the figure moving in between.
+func watchSpend(stop <-chan struct{}, interval time.Duration, refresh func()) {
+	t := time.NewTicker(interval)
+	defer t.Stop()
+	for {
+		select {
+		case <-stop:
+			return
+		case <-t.C:
+			refresh()
+		}
+	}
+}
 
 // How long a budget reading is reused before Apify is asked again. Short, because the figure it
 // gates on is money; long enough that a page open in several tabs is not a request per tab per load.
@@ -672,7 +696,8 @@ func (s *server) run(w http.ResponseWriter, r *http.Request) {
 			apifyTotal: count * len(source.All()), verifyTotal: count * len(source.All()),
 			// Measured above, or left zero when unknown. Never a placeholder.
 			rateUsed: preUsed, rateLimit: preLimit,
-			cfg: report.ConfigFrom(p),
+			liveSpend: real && admin,
+			cfg:       report.ConfigFrom(p),
 		}
 
 		if real {
@@ -928,6 +953,12 @@ func (s *server) runReal(j *jobState, userID, keywords string, p profile.Profile
 		j.mu.Lock()
 		j.rateUsed, j.rateLimit = b.UsedUSD, b.LimitUSD
 		j.mu.Unlock()
+	}
+	if j.liveSpend {
+		// Stopped on every return path by the deferred close, alongside the final refreshUsage.
+		stop := make(chan struct{})
+		defer close(stop)
+		go watchSpend(stop, liveSpendInterval, refreshUsage)
 	}
 
 	fail := func(msg string) {

@@ -52,9 +52,9 @@ func main() {
 
 	client := apify.New(token)
 	input := map[string]any{
-		"urls":          []string{*url},
-		"count":         *count,
-		"scrapeCompany": true,
+		"urls":           []string{*url},
+		"limitPerSource": *count, // the actor dropped "count" in Aug 2026
+		"scrapeCompany":  true,
 	}
 
 	fmt.Fprintf(os.Stderr, "running actor %s (count=%d)…\n", actorID, *count)
